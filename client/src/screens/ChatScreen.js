@@ -21,8 +21,8 @@ import Sidebar from "../components/Sidebar";
 import { getAllChats, saveChat, deleteChat } from "../storage/chatStorage";
 import { greetings } from "../data/greetings";
 
-// Use the detected laptop IP
-const BACKEND_URL = "http://192.168.1.37:3000";
+// Use the deployed Render URL
+const BACKEND_URL = "https://broai-bmmm.onrender.com";
 
 const ChatScreen = () => {
   const [messages, setMessages] = useState([]);

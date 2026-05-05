@@ -41,3 +41,9 @@ Desktop.ini
 
 # User Memory
 server/src/memory/memory.json
+
+# Native Android Build (Local)
+client/android/
+client/android/local.properties
+*.apk
+*.aab

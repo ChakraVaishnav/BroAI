@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "BroAI",
+    "slug": "broai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/bro_ai_icon_v2.svg",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chakravaishnav.broai"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "package": "com.chakravaishnav.broai"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "fc7f374e-2a8c-4a80-b853-151d41131223"
+      }
+    }
+  }
+}
