@@ -1,7 +1,8 @@
 import { createEvent, deleteEvent, listEvents } from "../../google/calendar.js";
 
 function toIsoDateTime(date, time) {
-  return new Date(`${date}T${time}:00`).toISOString();
+  // Ensure the time string is interpreted as IST (+05:30)
+  return new Date(`${date}T${time}:00+05:30`).toISOString();
 }
 
 function endDateFromStart(startDate) {
@@ -49,8 +50,8 @@ export const calendarTools = [
       required: ["start_date"],
     },
     execute: async ({ start_date, end_date }) => {
-      const start = new Date(`${start_date}T00:00:00`).toISOString();
-      const end = end_date ? new Date(`${end_date}T23:59:59`).toISOString() : endDateFromStart(start_date);
+      const start = new Date(`${start_date}T00:00:00+05:30`).toISOString();
+      const end = end_date ? new Date(`${end_date}T23:59:59+05:30`).toISOString() : endDateFromStart(start);
       return listEvents({ start, end });
     },
   },
