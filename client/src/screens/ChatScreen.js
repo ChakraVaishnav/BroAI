@@ -21,8 +21,8 @@ import Sidebar from "../components/Sidebar";
 import { getAllChats, saveChat, deleteChat } from "../storage/chatStorage";
 import { greetings } from "../data/greetings";
 
-// Use your computer's local Wi-Fi IP for Expo Go physical device testing
-const BACKEND_URL = "http://192.168.1.33:3000";
+// Connect to production backend
+const BACKEND_URL = "https://broai-bmmm.onrender.com";
 
 const ChatScreen = () => {
   const [messages, setMessages] = useState([]);
@@ -116,11 +116,14 @@ const ChatScreen = () => {
     try {
       console.log(`\n[FRONTEND] 🚀 Sending message to backend: "${text}"`);
       console.log(`[FRONTEND] 🔗 URL: ${BACKEND_URL}/chat`);
-      
+
       abortControllerRef.current = new AbortController();
       const response = await fetch(`${BACKEND_URL}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.EXPO_PUBLIC_BRO_AI_SECRET_TOKEN}`
+        },
         body: JSON.stringify({ message: text, history }),
         signal: abortControllerRef.current.signal,
       });
@@ -135,7 +138,7 @@ const ChatScreen = () => {
 
       const data = await response.json();
       console.log(`[FRONTEND] ✅ Received JSON data:`, data);
-      
+
       if (traceIntervalRef.current) clearInterval(traceIntervalRef.current);
 
       const aiMessage = {
@@ -157,7 +160,7 @@ const ChatScreen = () => {
     } catch (error) {
       if (error.name !== "AbortError") {
         console.error("\n[FRONTEND] ❌ Chat error:", error);
-        
+
         // Add an error message bubble so you can see it in the UI!
         const errorMessage = {
           id: (Date.now() + 1).toString(),

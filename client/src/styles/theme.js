@@ -1,4 +1,6 @@
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { useColorScheme } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const lightColors = {
   background: "#FFFFFF",
@@ -38,15 +40,37 @@ export const spacing = {
   xl: 32,
 };
 
-export const useAppTheme = () => {
-  const scheme = useColorScheme();
-  const isDark = scheme === "dark";
-  return {
-    isDark,
-    colors: isDark ? darkColors : lightColors,
-    spacing,
+const ThemeContext = createContext();
+
+export const ThemeProvider = ({ children }) => {
+  const systemScheme = useColorScheme();
+  const [themeMode, setThemeMode] = useState("system"); // "system", "light", "dark"
+
+  useEffect(() => {
+    AsyncStorage.getItem("@theme_mode").then((stored) => {
+      if (stored) setThemeMode(stored);
+    });
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = themeMode === "system" 
+      ? (systemScheme === "dark" ? "light" : "dark")
+      : (themeMode === "dark" ? "light" : "dark");
+    
+    setThemeMode(nextTheme);
+    AsyncStorage.setItem("@theme_mode", nextTheme);
   };
+
+  const isDark = themeMode === "system" ? systemScheme === "dark" : themeMode === "dark";
+
+  return (
+    <ThemeContext.Provider value={{ isDark, toggleTheme, colors: isDark ? darkColors : lightColors, spacing }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 };
+
+export const useAppTheme = () => useContext(ThemeContext);
 
 export const theme = {
   colors: darkColors,

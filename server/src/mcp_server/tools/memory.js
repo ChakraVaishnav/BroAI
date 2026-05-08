@@ -3,8 +3,7 @@ import { readMemory, saveMemory } from "../../memory/memory.js";
 export const memoryTools = [
   {
     name: "store_memory",
-    description:
-      "Stores important information the user wants the assistant to remember for future conversations. Use when the user explicitly says 'remember this', 'keep this in mind', 'don't forget', or shares personal preferences, important facts, or recurring instructions they want retained across sessions.",
+    description: "Stores important information to remember for future sessions.",
     inputSchema: {
       type: "object",
       properties: {

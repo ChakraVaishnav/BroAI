@@ -17,7 +17,7 @@ const { width } = Dimensions.get("window");
 const SIDEBAR_WIDTH = width * 0.8;
 
 const Sidebar = ({ isOpen, onClose, chats, onSelectChat, onDeleteChat, onNewChat, activeChatId }) => {
-  const { colors, isDark } = useAppTheme();
+  const { colors, isDark, toggleTheme } = useAppTheme();
   const slideAnim = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -101,14 +101,24 @@ const Sidebar = ({ isOpen, onClose, chats, onSelectChat, onDeleteChat, onNewChat
         </ScrollView>
 
         <View style={[styles.footer, { borderColor: colors.border }]}>
-          <TouchableOpacity 
-            style={[styles.newChatButton, { backgroundColor: colors.text }]} 
-            onPress={onNewChat}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add" size={24} color={colors.background} />
-            <Text style={[styles.newChatText, { color: colors.background }]}>Start New Session</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity 
+              style={[styles.newChatButton, { backgroundColor: colors.text, flex: 1, marginRight: 12 }]} 
+              onPress={onNewChat}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={24} color={colors.background} />
+              <Text style={[styles.newChatText, { color: colors.background }]}>Start New Session</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.newChatButton, { backgroundColor: colors.surface, paddingHorizontal: 16, borderWidth: 1, borderColor: colors.border }]} 
+              onPress={toggleTheme}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={isDark ? "sunny" : "moon"} size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
         </View>
       </Animated.View>
     </View>

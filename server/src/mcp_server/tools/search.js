@@ -1,8 +1,7 @@
 export const searchTools = [
   {
     name: "web_search",
-    description:
-      "Searches the web for current information, news, facts, or anything that requires up-to-date knowledge beyond the LLM's training data. Use when the user asks about recent events, wants to look something up, needs current data, or asks a factual question that should be verified with a live search.",
+    description: "Searches the web for live information and news.",
     inputSchema: {
       type: "object",
       properties: {

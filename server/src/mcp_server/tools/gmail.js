@@ -41,8 +41,7 @@ function filterEmailsByQuery(emails, query) {
 export const gmailTools = [
   {
     name: "send_email",
-    description:
-      "Sends an email via Gmail. Use this when the user wants to send, compose, or write an email to someone. Requires recipient email address and the content/body of the email. Subject is optional — infer it from context if not provided.",
+    description: "Sends an email. Subject is optional.",
     inputSchema: {
       type: "object",
       properties: {
@@ -59,8 +58,7 @@ export const gmailTools = [
   },
   {
     name: "get_emails",
-    description:
-      "Reads and fetches emails from Gmail inbox. Use this when the user asks to check emails, read messages, see what emails arrived, or look for a specific email from someone. Can filter by sender or keyword. Returns recent emails by default.",
+    description: "Reads emails from Gmail inbox. Can filter by sender or keyword.",
     inputSchema: {
       type: "object",
       properties: {

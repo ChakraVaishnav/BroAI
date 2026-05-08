@@ -12,8 +12,7 @@
 export const linkedinTools = [
   {
     name: "post_to_linkedin",
-    description:
-      "Post a text update to LinkedIn on behalf of the user. Use when the user says 'post this on LinkedIn', 'share on LinkedIn', or 'put this on my LinkedIn'.",
+    description: "Posts a text update to LinkedIn.",
     inputSchema: {
       type: "object",
       properties: {

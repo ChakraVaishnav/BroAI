@@ -13,8 +13,7 @@ function endDateFromStart(startDate) {
 export const calendarTools = [
   {
     name: "create_event",
-    description:
-      "Creates a new event on Google Calendar. Use this when the user wants to add a meeting, schedule something, set a reminder, or block time on their calendar. Always extract the event title, date, and time from the user's message.",
+    description: "Creates a new Google Calendar event.",
     inputSchema: {
       type: "object",
       properties: {
@@ -33,8 +32,7 @@ export const calendarTools = [
   },
   {
     name: "list_events",
-    description:
-      "Lists events from Google Calendar. Use when the user asks about their schedule, upcoming events, what's on their calendar today, tomorrow, this week, or within any specific date range. Also use when user asks about events on a specific date.",
+    description: "Lists Google Calendar events for a date range.",
     inputSchema: {
       type: "object",
       properties: {
@@ -58,8 +56,7 @@ export const calendarTools = [
   },
   {
     name: "delete_event",
-    description:
-      "Deletes an existing event from Google Calendar. Use when the user wants to cancel, remove, or delete a calendar event. First list events if the user hasn't specified an exact event ID — identify the right event then delete it.",
+    description: "Deletes a Google Calendar event by ID.",
     inputSchema: {
       type: "object",
       properties: {

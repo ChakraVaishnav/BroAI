@@ -24,8 +24,7 @@ export const supabaseTools = [
   // ── 1. Total user count ─────────────────────────────────────────────────
   {
     name: "get_user_count",
-    description:
-      "Returns the total number of registered users in the database. Use when asked 'how many users', 'total users', 'user count', etc.",
+    description: "Returns total number of registered users.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -45,8 +44,7 @@ export const supabaseTools = [
   // ── 2. User details by ID ────────────────────────────────────────────────
   {
     name: "get_user_by_id",
-    description:
-      "Fetch full details of a single user by their user ID. Returns id, username, email, creds, unlimited, jobsInDB, totalJobsSearched, authProvider, emailVerified.",
+    description: "Fetch full user details by ID.",
     inputSchema: {
       type: "object",
       properties: {
@@ -76,8 +74,7 @@ export const supabaseTools = [
   // ── 3. Last N users ──────────────────────────────────────────────────────
   {
     name: "get_last_users",
-    description:
-      "Returns the most recently registered users. Use when asked 'last 5 users', 'recent users', 'who signed up recently', etc. Ordered by id descending (newest first).",
+    description: "Returns the N most recently registered users (newest first).",
     inputSchema: {
       type: "object",
       properties: {
@@ -106,8 +103,7 @@ export const supabaseTools = [
   // ── 4. Search users by username ──────────────────────────────────────────
   {
     name: "search_users_by_name",
-    description:
-      "Find all users whose username matches a given name (partial, case-insensitive). Returns their username and email. Use when asked to find users by a specific name or username.",
+    description: "Search for users by username (partial match).",
     inputSchema: {
       type: "object",
       properties: {
@@ -142,8 +138,7 @@ export const supabaseTools = [
   // ── 5. Jobs fetched by a specific user ───────────────────────────────────
   {
     name: "get_jobs_by_user",
-    description:
-      "Returns all jobs fetched by a specific user (by userId), plus their JobUsage stats (searchCount, jobsFetched, tier, credits). Use when asked how many jobs a user has, what jobs a user fetched, or a user's job usage.",
+    description: "Returns all jobs and usage stats for a specific user ID.",
     inputSchema: {
       type: "object",
       properties: {
@@ -199,8 +194,7 @@ export const supabaseTools = [
   // ── 6. Recent ratings ────────────────────────────────────────────────────
   {
     name: "get_recent_ratings",
-    description:
-      "Returns the most recent ratings from the Rating table. Columns: id, userId, score (1–5), comment, createdAt, template. Use when asked about 'last ratings', 'recent reviews', 'what ratings were given', etc.",
+    description: "Returns the most recent job ratings/feedback.",
     inputSchema: {
       type: "object",
       properties: {
@@ -247,8 +241,7 @@ export const supabaseTools = [
   // ── 7. Generic table explorer ────────────────────────────────────────────
   {
     name: "query_table",
-    description:
-      "Query any allowed database table and return its latest rows. Use for any question about table contents not covered by the other tools. Known tables and their key columns: User (id, username, email, creds, unlimited, jobsInDB, totalJobsSearched), Resume (id, userId, data, updatedAt — data is full resume JSON), Job (id, userId, ...), JobUsage (id, userId, date, searchCount, jobsFetched, tier, credits, creditsUsed, lastSearchAt, updatedAt), Rating (id, userId, score, comment, createdAt, template).",
+    description: "Query any allowed database table (User, Resume, Job, JobUsage, Rating).",
     inputSchema: {
       type: "object",
       properties: {
