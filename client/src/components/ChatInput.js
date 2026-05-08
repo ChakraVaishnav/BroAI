@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { View, TextInput, TouchableOpacity, StyleSheet, Keyboard } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../styles/theme";
+import { useAppTheme, theme } from "../styles/theme";
 
 const ChatInput = ({ onSend, isGenerating, onStop }) => {
   const [text, setText] = useState("");
   const [inputHeight, setInputHeight] = useState(45);
+  const { colors, isDark } = useAppTheme();
 
   const handleSend = () => {
     if (text.trim()) {
@@ -22,29 +23,29 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.inputWrapper}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.inputWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <TextInput
-          style={[styles.input, { height: inputHeight }]}
+          style={[styles.input, { height: inputHeight, color: colors.text }]}
           placeholder="Type a message..."
-          placeholderTextColor={theme.colors.textSecondary}
+          placeholderTextColor={colors.textSecondary}
           value={text}
           onChangeText={setText}
           multiline
           onContentSizeChange={handleContentSizeChange}
-          selectionColor={theme.colors.accent}
+          selectionColor={colors.accent}
         />
         {isGenerating ? (
-          <TouchableOpacity style={styles.button} onPress={onStop}>
-            <Ionicons name="stop" size={24} color={theme.colors.text} />
+          <TouchableOpacity style={[styles.button, { backgroundColor: colors.text }]} onPress={onStop}>
+            <Ionicons name="stop" size={24} color={colors.background} />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity 
-            style={[styles.button, !text.trim() && styles.disabledButton]} 
+            style={[styles.button, { backgroundColor: colors.text }, !text.trim() && styles.disabledButton]} 
             onPress={handleSend}
             disabled={!text.trim()}
           >
-            <Ionicons name="arrow-up" size={24} color={theme.colors.text} />
+            <Ionicons name="arrow-up" size={24} color={colors.background} />
           </TouchableOpacity>
         )}
       </View>
@@ -55,21 +56,17 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
 const styles = StyleSheet.create({
   container: {
     padding: theme.spacing.md,
-    backgroundColor: theme.colors.background,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: theme.colors.surface,
     borderRadius: 25,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   input: {
     flex: 1,
-    color: theme.colors.text,
     fontSize: 16,
     paddingTop: 8,
     paddingBottom: 8,
@@ -79,7 +76,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#333333",
     justifyContent: "center",
     alignItems: "center",
     marginLeft: theme.spacing.sm,

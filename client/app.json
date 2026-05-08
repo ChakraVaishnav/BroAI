@@ -20,7 +20,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/bro_ai_icon_v2.svg",
         "backgroundColor": "#000000"
       },
       "package": "com.chakravaishnav.broai"

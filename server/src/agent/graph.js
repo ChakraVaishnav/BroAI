@@ -8,6 +8,7 @@ function parseInlineToolCall(content) {
     return null;
   }
 
+  // Pattern 1: <function=tool_name {...}></function>
   const funcTagRe = /<function=([a-zA-Z0-9_]+)\s*(\{[\s\S]*?\})\s*>\s*(?:<\/function>)?/;
   const tagged = content.match(funcTagRe);
   if (tagged) {
@@ -18,17 +19,32 @@ function parseInlineToolCall(content) {
     }
   }
 
+  // Pattern 2: tool_name({...})
   const simpleRe = /([a-zA-Z0-9_]+)\s*\(\s*(\{[\s\S]*?\})\s*\)/;
   const simple = content.match(simpleRe);
-  if (!simple) {
-    return null;
+  if (simple) {
+    try {
+      return { name: simple[1], args: JSON.parse(simple[2]) };
+    } catch {
+      return { name: simple[1], args: { _raw: simple[2] } };
+    }
   }
 
-  try {
-    return { name: simple[1], args: JSON.parse(simple[2]) };
-  } catch {
-    return { name: simple[1], args: { _raw: simple[2] } };
+  // Pattern 3: NVIDIA plain JSON format — {"name": "tool_name", "parameters": {...}}
+  // Also handles {"name": "tool_name", "arguments": {...}}
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed?.name === "string" && (parsed.parameters || parsed.arguments)) {
+        return { name: parsed.name, args: parsed.parameters || parsed.arguments };
+      }
+    } catch {
+      // not valid JSON, ignore
+    }
   }
+
+  return null;
 }
 
 function getLastUserText(messages = []) {
@@ -53,110 +69,35 @@ function getLastUserText(messages = []) {
   return "";
 }
 
-function isMailIntent(text = "") {
-  return /\b(mail|mails|email|emails|inbox|gmail|message|messages)\b/i.test(text);
-}
-
-function isSendMailIntent(text = "") {
-  return /\b(send|compose|draft|write|reply|forward)\b/i.test(text);
-}
-
-function isReadMailIntent(text = "") {
-  if (!isMailIntent(text)) {
-    return false;
-  }
-
-  if (isSendMailIntent(text)) {
-    return false;
-  }
-
-  return /\b(check|read|show|list|fetch|get|last|latest|recent|from|subject|inbox|mail|email)s?\b/i.test(text);
-}
-
-function inferMailArgs(text = "") {
-  const countMatch = text.match(/\b(?:last|latest|recent)\s+(\d{1,2})\b/i);
-  const maxResults = countMatch ? Math.min(Math.max(Number(countMatch[1]) || 5, 1), 20) : 5;
-
-  const fromMatch = text.match(/\bfrom\s+([^\s,?.!]+)/i);
-  const subjectMatch = text.match(/\bsubject\s+([^?.!]+)/i);
-
-  let query = "";
-  if (fromMatch?.[1]) {
-    query = `from:${fromMatch[1]}`;
-  } else if (subjectMatch?.[1]) {
-    query = `subject:${subjectMatch[1].trim()}`;
-  }
-
-  return { maxResults, query };
-}
-
-function formatEmailsResponse(result) {
-  const emails = Array.isArray(result?.emails) ? result.emails : [];
-  if (!emails.length) {
-    return "Sir, I couldn't find any emails matching that request.";
-  }
-
-  const lines = emails.map((email, idx) => {
-    const sender = String(email?.sender || "Unknown sender").trim();
-    const subject = String(email?.subject || "(No subject)").trim();
-    const snippet = String(email?.snippet || "").trim();
-    return `${idx + 1}. From: ${sender}\n   Subject: ${subject}\n   Snippet: ${snippet}`;
-  });
-
-  return `Sir, here are your recent emails:\n\n${lines.join("\n\n")}`;
-}
-
 export async function buildGraph() {
   const tools = await getTools();
   const llmWithTools = getLlmWithTools(tools);
 
   const graph = new StateGraph(MessagesAnnotation)
     .addNode("agentNode", async (state) => {
-      const userText = getLastUserText(state.messages);
-
-      // Reliability path: answer read-email requests directly via MCP tool.
-      if (isReadMailIntent(userText)) {
-        try {
-          const args = inferMailArgs(userText);
-          const result = await callTool("get_emails", args);
-          return { messages: [new AIMessage({ content: formatEmailsResponse(result) })] };
-        } catch (readErr) {
-          console.error("agentNode read-mail direct path failed:", readErr);
-          return {
-            messages: [
-              new AIMessage({
-                content: "Sir, I couldn't access Gmail right now. Please verify your Gmail auth environment variables and try again.",
-              }),
-            ],
-          };
-        }
-      }
-
       try {
         const aiMessage = await llmWithTools.invoke(state.messages);
-        return { messages: [aiMessage] };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const lower = message.toLowerCase();
-        const fallbackUserText = userText;
 
-        // Fallback for providers that reject generated function tags before tool execution.
-        if (lower.includes("tool_use_failed") && isMailIntent(fallbackUserText)) {
-          try {
-            const args = inferMailArgs(fallbackUserText);
-            const result = await callTool("get_emails", args);
-            return { messages: [new AIMessage({ content: formatEmailsResponse(result) })] };
-          } catch (fallbackErr) {
-            console.error("agentNode fallback get_emails failed:", fallbackErr);
-            return {
-              messages: [
-                new AIMessage({
-                  content: "Sir, I couldn't access Gmail right now due to a tool-calling error. Please verify Gmail auth env vars and try again.",
-                }),
-              ],
-            };
+        // Normalize inline tool calls (e.g. NVIDIA returns {"name":"tool","parameters":{...}} in content)
+        // into a proper structured AIMessage with tool_calls so Groq doesn't crash on the next turn.
+        const hasStructuredCalls = Array.isArray(aiMessage.tool_calls) && aiMessage.tool_calls.length > 0;
+        if (!hasStructuredCalls) {
+          const inlineParsed = parseInlineToolCall(
+            typeof aiMessage.content === "string" ? aiMessage.content : null
+          );
+          if (inlineParsed) {
+            const toolCallId = `tc_${Date.now()}`;
+            const normalized = new AIMessage({
+              content: "",
+              tool_calls: [{ id: toolCallId, name: inlineParsed.name, args: inlineParsed.args, type: "tool_call" }],
+            });
+            return { messages: [normalized] };
           }
         }
+
+        return { messages: [aiMessage] };
+      } catch (err) {
+
 
         throw err;
       }

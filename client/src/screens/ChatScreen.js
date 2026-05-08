@@ -14,15 +14,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { theme } from "../styles/theme";
+import { useAppTheme, theme } from "../styles/theme";
 import MessageBubble from "../components/MessageBubble";
 import ChatInput from "../components/ChatInput";
 import Sidebar from "../components/Sidebar";
 import { getAllChats, saveChat, deleteChat } from "../storage/chatStorage";
 import { greetings } from "../data/greetings";
 
-// Use the deployed Render URL
-const BACKEND_URL = "https://broai-bmmm.onrender.com";
+// Use your computer's local Wi-Fi IP for Expo Go physical device testing
+const BACKEND_URL = "http://192.168.1.33:3000";
 
 const ChatScreen = () => {
   const [messages, setMessages] = useState([]);
@@ -39,6 +39,7 @@ const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const menuScale = useRef(new Animated.Value(1)).current;
+  const { colors, isDark } = useAppTheme();
 
   useEffect(() => {
     loadChats();
@@ -113,6 +114,9 @@ const ChatScreen = () => {
     }));
 
     try {
+      console.log(`\n[FRONTEND] 🚀 Sending message to backend: "${text}"`);
+      console.log(`[FRONTEND] 🔗 URL: ${BACKEND_URL}/chat`);
+      
       abortControllerRef.current = new AbortController();
       const response = await fetch(`${BACKEND_URL}/chat`, {
         method: "POST",
@@ -121,18 +125,24 @@ const ChatScreen = () => {
         signal: abortControllerRef.current.signal,
       });
 
+      console.log(`[FRONTEND] 📥 Received status: ${response.status}`);
+
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        const errText = await response.text();
+        console.error(`[FRONTEND] ❌ Server error text:`, errText);
+        throw new Error(`Server error: ${response.status} - ${errText}`);
       }
 
       const data = await response.json();
+      console.log(`[FRONTEND] ✅ Received JSON data:`, data);
+      
       if (traceIntervalRef.current) clearInterval(traceIntervalRef.current);
 
       const aiMessage = {
         id: (Date.now() + 1).toString(),
-        text: data.response,
+        text: data.reply || data.response || "Error: No reply found in backend response.",
         isUser: false,
-        modelLabel: data.model?.label || "BRO AI",
+        modelLabel: "BRO AI",
       };
 
       const updatedMessages = [...newMessages, aiMessage];
@@ -145,7 +155,18 @@ const ChatScreen = () => {
       loadChats();
 
     } catch (error) {
-      if (error.name !== "AbortError") console.error("Chat error:", error);
+      if (error.name !== "AbortError") {
+        console.error("\n[FRONTEND] ❌ Chat error:", error);
+        
+        // Add an error message bubble so you can see it in the UI!
+        const errorMessage = {
+          id: (Date.now() + 1).toString(),
+          text: `Connection Error: ${error.message}`,
+          isUser: false,
+          modelLabel: "SYSTEM ERROR",
+        };
+        setMessages(msgs => [...msgs, errorMessage]);
+      }
     } finally {
       setIsGenerating(false);
       setCurrentTrace("");
@@ -161,7 +182,7 @@ const ChatScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Sidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
@@ -179,12 +200,12 @@ const ChatScreen = () => {
             style={styles.menuButton}
             activeOpacity={1}
           >
-            <Ionicons name="menu-outline" size={32} color={theme.colors.text} />
+            <Ionicons name="menu-outline" size={32} color={colors.text} />
           </TouchableOpacity>
         </Animated.View>
-        <Text style={styles.headerTitle}>BRO AI</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>BRO AI</Text>
         <TouchableOpacity style={styles.menuButton} onPress={handleNewChat}>
-          <Ionicons name="add" size={28} color={theme.colors.text} />
+          <Ionicons name="add" size={28} color={colors.text} />
         </TouchableOpacity>
       </Animated.View>
 
@@ -211,14 +232,14 @@ const ChatScreen = () => {
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           ListEmptyComponent={() => (
             <Animated.View style={[styles.greetingContainer, { opacity: fadeAnim }]}>
-              <Text style={styles.greetingText}>{greeting}</Text>
-              <Text style={styles.greetingSub}>Your personal intelligence, unlocked.</Text>
+              <Text style={[styles.greetingText, { color: colors.text }]}>{greeting}</Text>
+              <Text style={[styles.greetingSub, { color: colors.textSecondary }]}>Your personal intelligence, unlocked.</Text>
             </Animated.View>
           )}
           ListFooterComponent={() => isGenerating && (
-            <View style={styles.traceContainer}>
-              <ActivityIndicator size="small" color="#444" style={{ marginRight: 12 }} />
-              <Text style={styles.traceText}>{currentTrace}</Text>
+            <View style={[styles.traceContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <ActivityIndicator size="small" color={colors.textSecondary} style={{ marginRight: 12 }} />
+              <Text style={[styles.traceText, { color: colors.textSecondary }]}>{currentTrace}</Text>
             </View>
           )}
         />
@@ -237,16 +258,15 @@ const ChatScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
+    paddingBottom: 16,
     borderBottomWidth: 1,
-    borderColor: "#0A0A0A",
+    borderColor: "#222", // Default, will be overridden or we can remove border, let's keep border
   },
   menuButton: {
     width: 44,
@@ -255,7 +275,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: {
-    color: theme.colors.text,
     fontSize: 14,
     fontWeight: "900",
     letterSpacing: 6,
@@ -266,7 +285,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingVertical: theme.spacing.md,
+    paddingVertical: 16,
   },
   emptyList: {
     flex: 1,
@@ -278,14 +297,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   greetingText: {
-    color: theme.colors.text,
     fontSize: 32,
     fontWeight: "200",
     textAlign: "center",
     lineHeight: 42,
   },
   greetingSub: {
-    color: "#333",
     fontSize: 12,
     fontWeight: "bold",
     textTransform: "uppercase",
@@ -298,15 +315,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     marginVertical: 20,
-    backgroundColor: "#080808",
     padding: 14,
     borderRadius: 16,
     alignSelf: "center",
     borderWidth: 1,
-    borderColor: "#111",
   },
   traceText: {
-    color: "#666",
     fontSize: 13,
     fontWeight: "500",
     letterSpacing: 1,

@@ -1,11 +1,12 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Animated, TouchableOpacity, Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { theme } from "../styles/theme";
+import { useAppTheme, theme } from "../styles/theme";
 
 const MessageBubble = ({ message, isUser, modelLabel }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(10)).current;
+  const { colors } = useAppTheme();
 
   useEffect(() => {
     Animated.parallel([
@@ -41,12 +42,12 @@ const MessageBubble = ({ message, isUser, modelLabel }) => {
         onLongPress={handleLongPress}
         delayLongPress={500}
       >
-        <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-          <Text selectable={true} style={styles.text}>{message}</Text>
+        <View style={[styles.bubble, isUser ? { backgroundColor: colors.bubbleUser, borderBottomRightRadius: 4 } : { backgroundColor: colors.bubbleAi, borderBottomLeftRadius: 4 }]}>
+          <Text selectable={true} style={[styles.text, { color: isUser ? colors.bubbleUserText : colors.bubbleAiText }]}>{message}</Text>
         </View>
       </TouchableOpacity>
       {!isUser && modelLabel && (
-        <Text style={styles.modelLabel}>{modelLabel}</Text>
+        <Text style={[styles.modelLabel, { color: colors.textSecondary }]}>{modelLabel}</Text>
       )}
     </Animated.View>
   );
@@ -69,21 +70,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     maxWidth: "85%",
   },
-  userBubble: {
-    backgroundColor: "#1A1A1A",
-    borderBottomRightRadius: 4,
-  },
-  aiBubble: {
-    backgroundColor: "#0D0D0D",
-    borderBottomLeftRadius: 4,
-  },
   text: {
-    color: theme.colors.text,
     fontSize: 15,
     lineHeight: 22,
   },
   modelLabel: {
-    color: "#444",
     fontSize: 9,
     marginTop: 6,
     marginLeft: 10,

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -6,6 +7,9 @@ import { calendarTools } from "./tools/calendar.js";
 import { searchTools } from "./tools/search.js";
 import { memoryTools } from "./tools/memory.js";
 import { systemTools } from "./tools/system.js";
+import { supabaseTools } from "./tools/supabase.js";
+
+import { linkedinTools } from "./tools/linkedin.js";
 
 function jsonSchemaToRawShape(schema = {}) {
   if (!schema || schema.type !== "object") {
@@ -66,6 +70,9 @@ const allTools = [
   ...searchTools,
   ...memoryTools,
   ...systemTools,
+  ...supabaseTools,
+
+  ...linkedinTools,
 ];
 
 for (const tool of allTools) {
