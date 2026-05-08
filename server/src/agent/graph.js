@@ -1,185 +1,240 @@
-import { StateGraph, END } from "@langchain/langgraph";
-import { callLLM } from "../llm/groq.js";
-import { loadTools } from "../toolLoader/loadTools.js";
+import { END, MessagesAnnotation, StateGraph } from "@langchain/langgraph";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import { getLlmWithTools } from "../llm/groq.js";
+import { callTool, getTools } from "./mcpClient.js";
 
-function sanitizeMessages(messages = []) {
-  return messages.map((message) => {
-    if (!message || typeof message !== "object") {
-      return message;
-    }
-
-    const role = message.role || message._getType?.() || message.type || "assistant";
-    const content = typeof message.content === "undefined" ? null : message.content;
-
-    const cleanMessage = {
-      role,
-      content,
-    };
-
-    if (message.name) {
-      cleanMessage.name = message.name;
-    }
-
-    if (message.tool_call_id) {
-      cleanMessage.tool_call_id = message.tool_call_id;
-    }
-
-    if (message.tool_calls) {
-      cleanMessage.tool_calls = Array.isArray(message.tool_calls)
-        ? message.tool_calls.map((toolCall) => ({
-            id: toolCall.id,
-            type: toolCall.type || "function",
-            function: toolCall.function ? {
-              name: toolCall.function.name,
-              arguments: toolCall.function.arguments,
-            } : undefined,
-          }))
-        : message.tool_calls;
-    }
-
-    return cleanMessage;
-  });
-}
-
-function parseToolCallContent(content, tools) {
+function parseInlineToolCall(content) {
   if (typeof content !== "string") {
     return null;
   }
 
-  const toolNames = tools.map((tool) => tool.function?.name).filter(Boolean);
-
-  for (const fnName of toolNames) {
-    const patterns = [
-      new RegExp(`<function\\s*=\\s*${fnName}\\s*({[\\s\\S]*?})`, "i"),
-      new RegExp(`<${fnName}\\s*>(\\{[\\s\\S]*?\\})`, "i"),
-      new RegExp(`<${fnName}\\s*\/?>\\s*(\\{[\\s\\S]*?\\})`, "i"),
-      new RegExp(`\\b${fnName}\\b[^\\{]*({[\\s\\S]*?})`, "i"),
-    ];
-
-    for (const pattern of patterns) {
-      const match = content.match(pattern);
-      if (!match) {
-        continue;
-      }
-
-      try {
-        const rawArgs = match[1].replace(/<\/?function>/gi, "").replace(/<\/?[a-zA-Z0-9_]+>$/g, "").trim();
-        const parsedArgs = JSON.parse(rawArgs);
-
-        return {
-          tool_calls: [
-            {
-              id: "generated",
-              type: "function",
-              function: {
-                name: fnName,
-                arguments: JSON.stringify(parsedArgs),
-              },
-            },
-          ],
-        };
-      } catch (error) {
-        return null;
-      }
+  const funcTagRe = /<function=([a-zA-Z0-9_]+)\s*(\{[\s\S]*?\})\s*>\s*(?:<\/function>)?/;
+  const tagged = content.match(funcTagRe);
+  if (tagged) {
+    try {
+      return { name: tagged[1], args: JSON.parse(tagged[2]) };
+    } catch {
+      return { name: tagged[1], args: { _raw: tagged[2] } };
     }
   }
 
-  return null;
+  const simpleRe = /([a-zA-Z0-9_]+)\s*\(\s*(\{[\s\S]*?\})\s*\)/;
+  const simple = content.match(simpleRe);
+  if (!simple) {
+    return null;
+  }
+
+  try {
+    return { name: simple[1], args: JSON.parse(simple[2]) };
+  } catch {
+    return { name: simple[1], args: { _raw: simple[2] } };
+  }
 }
 
-export async function buildGraph(options = {}) {
-  const record = options.record || (() => {});
-  const trace = options.trace || [];
-  const onModelMetadata = options.onModelMetadata || (() => {});
-  const tools = await loadTools();
+function getLastUserText(messages = []) {
+  const reversed = [...messages].reverse();
+  const human = reversed.find((msg) => msg?.getType?.() === "human");
+  if (!human) {
+    return "";
+  }
 
-  const toolMap = Object.fromEntries(
-    tools.map(t => [t.name, t])
-  );
+  if (typeof human.content === "string") {
+    return human.content;
+  }
 
-  const llmTools = tools.map(tool => ({
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters
-    }
-  }));
+  if (Array.isArray(human.content)) {
+    return human.content
+      .filter((part) => part?.type === "text")
+      .map((part) => part.text)
+      .join(" ")
+      .trim();
+  }
 
-  // 🧠 STATE
-  const graph = new StateGraph({
-    channels: {
-      messages: [],
-      pendingToolCall: null,
-    }
+  return "";
+}
+
+function isMailIntent(text = "") {
+  return /\b(mail|mails|email|emails|inbox|gmail|message|messages)\b/i.test(text);
+}
+
+function isSendMailIntent(text = "") {
+  return /\b(send|compose|draft|write|reply|forward)\b/i.test(text);
+}
+
+function isReadMailIntent(text = "") {
+  if (!isMailIntent(text)) {
+    return false;
+  }
+
+  if (isSendMailIntent(text)) {
+    return false;
+  }
+
+  return /\b(check|read|show|list|fetch|get|last|latest|recent|from|subject|inbox|mail|email)s?\b/i.test(text);
+}
+
+function inferMailArgs(text = "") {
+  const countMatch = text.match(/\b(?:last|latest|recent)\s+(\d{1,2})\b/i);
+  const maxResults = countMatch ? Math.min(Math.max(Number(countMatch[1]) || 5, 1), 20) : 5;
+
+  const fromMatch = text.match(/\bfrom\s+([^\s,?.!]+)/i);
+  const subjectMatch = text.match(/\bsubject\s+([^?.!]+)/i);
+
+  let query = "";
+  if (fromMatch?.[1]) {
+    query = `from:${fromMatch[1]}`;
+  } else if (subjectMatch?.[1]) {
+    query = `subject:${subjectMatch[1].trim()}`;
+  }
+
+  return { maxResults, query };
+}
+
+function formatEmailsResponse(result) {
+  const emails = Array.isArray(result?.emails) ? result.emails : [];
+  if (!emails.length) {
+    return "Sir, I couldn't find any emails matching that request.";
+  }
+
+  const lines = emails.map((email, idx) => {
+    const sender = String(email?.sender || "Unknown sender").trim();
+    const subject = String(email?.subject || "(No subject)").trim();
+    const snippet = String(email?.snippet || "").trim();
+    return `${idx + 1}. From: ${sender}\n   Subject: ${subject}\n   Snippet: ${snippet}`;
   });
 
-  // 🧠 LLM NODE
-  graph.addNode("llm", async (state) => {
-    const cleanMessages = sanitizeMessages(state.messages);
-    let response = await callLLM(cleanMessages, llmTools, { record, trace });
-    let pendingToolCall = null;
+  return `Sir, here are your recent emails:\n\n${lines.join("\n\n")}`;
+}
 
-    if (response.tool_calls?.length) {
-      pendingToolCall = response.tool_calls[0];
-    } else if (typeof response.content === "string") {
-      const parsedToolCall = parseToolCallContent(response.content, llmTools);
-      if (parsedToolCall) {
-        pendingToolCall = parsedToolCall.tool_calls[0];
+export async function buildGraph() {
+  const tools = await getTools();
+  const llmWithTools = getLlmWithTools(tools);
+
+  const graph = new StateGraph(MessagesAnnotation)
+    .addNode("agentNode", async (state) => {
+      const userText = getLastUserText(state.messages);
+
+      // Reliability path: answer read-email requests directly via MCP tool.
+      if (isReadMailIntent(userText)) {
+        try {
+          const args = inferMailArgs(userText);
+          const result = await callTool("get_emails", args);
+          return { messages: [new AIMessage({ content: formatEmailsResponse(result) })] };
+        } catch (readErr) {
+          console.error("agentNode read-mail direct path failed:", readErr);
+          return {
+            messages: [
+              new AIMessage({
+                content: "Sir, I couldn't access Gmail right now. Please verify your Gmail auth environment variables and try again.",
+              }),
+            ],
+          };
+        }
       }
-    }
 
-    onModelMetadata(response.metadata || null);
+      try {
+        const aiMessage = await llmWithTools.invoke(state.messages);
+        return { messages: [aiMessage] };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const lower = message.toLowerCase();
+        const fallbackUserText = userText;
 
-    const storedResponse = {
-      role: response.role || "assistant",
-      content: typeof response.content === "undefined" ? null : response.content,
-    };
+        // Fallback for providers that reject generated function tags before tool execution.
+        if (lower.includes("tool_use_failed") && isMailIntent(fallbackUserText)) {
+          try {
+            const args = inferMailArgs(fallbackUserText);
+            const result = await callTool("get_emails", args);
+            return { messages: [new AIMessage({ content: formatEmailsResponse(result) })] };
+          } catch (fallbackErr) {
+            console.error("agentNode fallback get_emails failed:", fallbackErr);
+            return {
+              messages: [
+                new AIMessage({
+                  content: "Sir, I couldn't access Gmail right now due to a tool-calling error. Please verify Gmail auth env vars and try again.",
+                }),
+              ],
+            };
+          }
+        }
 
-    return {
-      messages: [...state.messages, storedResponse],
-      pendingToolCall
-    };
-  });
+        throw err;
+      }
+    })
+    .addNode("toolNode", async (state) => {
+      const lastMessage = state.messages[state.messages.length - 1];
+      let toolCalls = Array.isArray(lastMessage?.tool_calls) ? lastMessage.tool_calls : [];
 
-  // 🔌 TOOL NODE
-  graph.addNode("tool", async (state) => {
-    const toolCall = state.pendingToolCall;
-    if (!toolCall) return state;
+      // If model didn't set structured `tool_calls`, try to parse inline function tags
+      // e.g. <function=get_emails {"maxResults":10,"query":""}></function>
+      if (!toolCalls.length && typeof lastMessage?.content === "string") {
+        const parsedInline = parseInlineToolCall(lastMessage.content);
+        if (parsedInline) {
+          toolCalls = [parsedInline];
+        }
+      }
 
-    const toolName = toolCall.function.name;
-    const args = JSON.parse(toolCall.function.arguments || "{}");
+      const toolMessages = [];
 
-    const tool = toolMap[toolName];
+      for (const toolCall of toolCalls) {
+        // Support multiple tool_call shapes from different LLM outputs:
+        // - { name, args }
+        // - { function: { name, arguments } }
+        // - arguments may be a stringified JSON or an object
+        let toolName = toolCall?.name || toolCall?.function?.name || (toolCall?.function && toolCall.function.name) || null;
+        let rawArgs = toolCall?.args || toolCall?.arguments || toolCall?.function?.arguments || null;
 
-    const result = await tool.execute(args);
+        // If the tool name is nested in an object, try to extract string value
+        if (toolName && typeof toolName === "object") {
+          toolName = toolName.name || toolName.value || toolName.text || null;
+        }
 
-    return {
-      messages: [
-        ...state.messages,
-        {
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: JSON.stringify(result),
-        },
-      ],
-      pendingToolCall: null,
-    };
-  });
+        let parsedArgs = {};
+        if (typeof rawArgs === "string") {
+          try {
+            parsedArgs = JSON.parse(rawArgs);
+          } catch (e) {
+            parsedArgs = { _raw: rawArgs };
+          }
+        } else if (typeof rawArgs === "object" && rawArgs !== null) {
+          parsedArgs = rawArgs;
+        }
 
-  // 🔁 CONDITIONAL EDGE
-  graph.addConditionalEdges("llm", (state) => {
-    if (state.pendingToolCall) {
-      return "tool";
-    }
+        if (!toolName) {
+          console.error("toolNode: missing tool name in tool_call", JSON.stringify(toolCall));
+          toolMessages.push(new ToolMessage({ tool_call_id: toolCall.id || "unknown", content: "Error: missing tool name" }));
+          continue;
+        }
 
-    return END;
-  });
+        try {
+          const result = await callTool(toolName, parsedArgs || {});
+          toolMessages.push(
+            new ToolMessage({
+              tool_call_id: toolCall.id || toolCall.tool_call_id || "generated",
+              content: typeof result === "string" ? result : JSON.stringify(result),
+            })
+          );
+        } catch (err) {
+          console.error(`toolNode: callTool(${toolName}) failed:`, err?.message || err);
+          toolMessages.push(
+            new ToolMessage({
+              tool_call_id: toolCall.id || toolCall.tool_call_id || "generated",
+              content: JSON.stringify({ success: false, error: String(err?.message || err) }),
+            })
+          );
+        }
+      }
 
-  // 🔁 LOOP BACK
-  graph.addEdge("tool", "llm");
-
-  graph.setEntryPoint("llm");
+      return { messages: toolMessages };
+    })
+    .addConditionalEdges("agentNode", (state) => {
+      const lastMessage = state.messages[state.messages.length - 1];
+      const hasToolCalls = Array.isArray(lastMessage?.tool_calls) && lastMessage.tool_calls.length > 0;
+      const hasInlineToolCall = Boolean(parseInlineToolCall(lastMessage?.content));
+      return hasToolCalls || hasInlineToolCall ? "toolNode" : END;
+    })
+    .addEdge("toolNode", "agentNode")
+    .addEdge("__start__", "agentNode");
 
   return graph.compile();
 }

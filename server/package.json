@@ -14,11 +14,13 @@
   "type": "module",
   "dependencies": {
     "@langchain/core": "^1.1.44",
+    "@langchain/groq": "^1.2.0",
     "@langchain/langgraph": "^1.2.9",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "googleapis": "^171.4.0",
-    "openai": "^6.36.0"
+    "openai": "^6.36.0",
+    "zod": "^4.4.3"
   }
 }
