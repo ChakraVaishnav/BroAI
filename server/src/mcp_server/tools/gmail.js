@@ -1,4 +1,4 @@
-import { getEmails, sendEmail } from "../../google/gmail.js";
+import { getEmails, sendEmail, replyToEmail } from "../../google/gmail.js";
 
 function inferSubject(body = "") {
   const trimmed = String(body || "").trim();
@@ -54,6 +54,21 @@ export const gmailTools = [
     execute: async ({ to, subject, body }) => {
       const resolvedSubject = subject || inferSubject(body);
       return sendEmail({ to, subject: resolvedSubject, body });
+    },
+  },
+  {
+    name: "reply_to_email",
+    description: "Use this tool to reply to an existing email thread. Sir must provide the messageId of the email he wants to reply to. This tool automatically handles the threading, recipient, and 'Re:' subject line. ALWAYS use this when Sir says 'reply to this' or 'tell them...'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "The ID of the email message to reply to." },
+        body: { type: "string", description: "The content of your reply message." },
+      },
+      required: ["messageId", "body"],
+    },
+    execute: async ({ messageId, body }) => {
+      return replyToEmail({ messageId, body });
     },
   },
   {

@@ -2,11 +2,8 @@ import "dotenv/config";
 import { ChatGroq } from "@langchain/groq";
 import { ChatOpenAI } from "@langchain/openai";
 
-/**
- * PROBLEM 3 FIX: Use ONLY llama-3.3-70b-versatile.
- * The 8b model is too weak and hallucinates heavily.
- */
 const PRIMARY_MODEL = "llama-3.3-70b-versatile";
+const NVIDIA_MODEL = "meta/llama-3.3-70b-instruct";
 
 function isRateLimitError(error) {
   const message = String(error?.message || error || "").toLowerCase();
@@ -23,13 +20,13 @@ function createGroqModel(apiKey) {
 }
 
 function createNvidiaModel() {
-  if (!process.env.NVIDIA_API_KEY || !process.env.NVIDIA_BASE_URL || !process.env.NVIDIA_PRIMARY_MODEL) {
+  if (!process.env.NVIDIA_API_KEY || !process.env.NVIDIA_BASE_URL) {
     return null;
   }
 
   return new ChatOpenAI({
     apiKey: process.env.NVIDIA_API_KEY,
-    model: process.env.NVIDIA_PRIMARY_MODEL,
+    model: NVIDIA_MODEL,
     temperature: 0,
     configuration: {
       baseURL: `${process.env.NVIDIA_BASE_URL.replace(/\/$/, "")}/v1`,
@@ -40,28 +37,32 @@ function createNvidiaModel() {
 function getCandidateModels() {
   const candidates = [];
 
-  // Try Groq with Primary Key
+  // 1. Groq Primary (GROQ_API_KEY)
   if (process.env.GROQ_API_KEY) {
     candidates.push({ 
-      provider: "groq-primary", 
+      provider: "groqPrimary", 
       modelName: PRIMARY_MODEL, 
       client: createGroqModel(process.env.GROQ_API_KEY) 
     });
   }
 
-  // Try Groq with Secondary Key (Backup for rate limits)
+  // 2. Groq Backup (GROQ_API_KEY_2)
   if (process.env.GROQ_API_KEY_2) {
     candidates.push({ 
-      provider: "groq-backup", 
+      provider: "groqBackup", 
       modelName: PRIMARY_MODEL, 
       client: createGroqModel(process.env.GROQ_API_KEY_2) 
     });
   }
 
-  // NVIDIA as last resort (if configured)
-  const nvidiaModel = createNvidiaModel();
-  if (nvidiaModel) {
-    candidates.push({ provider: "nvidia", modelName: process.env.NVIDIA_PRIMARY_MODEL, client: nvidiaModel });
+  // 3. NVIDIA Client (meta/llama-3.3-70b-instruct)
+  const nvidiaClient = createNvidiaModel();
+  if (nvidiaClient) {
+    candidates.push({ 
+      provider: "nvidiaClient", 
+      modelName: NVIDIA_MODEL, 
+      client: nvidiaClient 
+    });
   }
 
   return candidates;
@@ -78,21 +79,25 @@ export function getLlmWithTools(tools) {
       let lastError = null;
       let sawRateLimit = false;
 
-      for (const candidate of candidates) {
-        console.log(`[LLM] Trying ${candidate.provider} / ${candidate.modelName} ...`);
+      for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i];
+        
+        if (i > 0) {
+          console.log('[LLM FALLBACK] Switching to fallback model:', candidate.modelName);
+        }
+
         try {
           const result = await candidate.client.invoke(messages);
-          console.log(`[LLM] ✅ Success with ${candidate.provider} / ${candidate.modelName}`);
           global.__last_model_used = `${candidate.provider} / ${candidate.modelName}`;
           return result;
         } catch (error) {
           lastError = error;
           if (isRateLimitError(error)) {
             sawRateLimit = true;
-            console.warn(`[LLM] ⚠️  Rate limit on ${candidate.provider} / ${candidate.modelName} — trying next...`);
+            console.warn(`[LLM] Rate limit on ${candidate.provider} — trying next candidate...`);
             continue;
           }
-          console.error(`[LLM] ❌ Error on ${candidate.provider} / ${candidate.modelName}:`, error.message);
+          console.error(`[LLM] Error on ${candidate.provider}:`, error.message);
           continue;
         }
       }
@@ -104,7 +109,7 @@ export function getLlmWithTools(tools) {
         throw rateLimitError;
       }
 
-      throw new Error(lastError ? lastError.message : "No LLM candidates are configured or all failed.");
+      throw new Error(lastError ? lastError.message : "No LLM candidates configured or all failed.");
     },
   };
 }

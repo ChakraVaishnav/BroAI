@@ -71,7 +71,6 @@ const allTools = [
   ...memoryTools,
   ...systemTools,
   ...supabaseTools,
-
   ...linkedinTools,
 ];
 
@@ -85,16 +84,37 @@ for (const tool of allTools) {
       inputSchema: rawShape,
     },
     async (args) => {
-      const result = await tool.execute(args || {});
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-        structuredContent: result,
-      };
+      try {
+        const result = await tool.execute(args || {});
+        
+        // Final fallback to ensure the response is ALWAYS an object for the SDK
+        // and ALWAYS has a text content part for the LLM.
+        const response = {
+          content: [
+            {
+              type: "text",
+              text: typeof result === "string" ? result : JSON.stringify(result),
+            },
+          ],
+        };
+
+        // ONLY include structuredContent if it's a valid object (record)
+        if (result && typeof result === "object" && !Array.isArray(result)) {
+          response.structuredContent = result;
+        }
+
+        return response;
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Tool execution failed: ${error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
     }
   );
 }

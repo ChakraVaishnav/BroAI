@@ -19,6 +19,7 @@
     "@langchain/openai": "^1.4.5",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/supabase-js": "^2.105.3",
+    "@tavily/core": "^0.7.3",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "googleapis": "^171.4.0",
