@@ -41,7 +41,7 @@ function filterEmailsByQuery(emails, query) {
 export const gmailTools = [
   {
     name: "send_email",
-    description: "Sends an email. Subject is optional.",
+    description: "Use this tool ONLY when Sir has explicitly said to send an email with a clear instruction like 'send this email', 'send it', or 'go ahead and send'. Do NOT call this tool just because Sir mentioned email in conversation, asked a question about email capability, or described a situation.",
     inputSchema: {
       type: "object",
       properties: {
@@ -58,7 +58,7 @@ export const gmailTools = [
   },
   {
     name: "get_emails",
-    description: "Reads emails from Gmail inbox. Can filter by sender or keyword.",
+    description: "ALWAYS use this tool when Sir asks about emails, inbox, messages, mail, or anything email-related. You have NO knowledge of Sir's actual emails. Do not answer email questions from memory. Call this tool every single time Sir mentions emails, even if you think you already know the answer.",
     inputSchema: {
       type: "object",
       properties: {

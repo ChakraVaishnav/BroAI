@@ -1,7 +1,7 @@
 export const searchTools = [
   {
     name: "web_search",
-    description: "Searches the web for live information and news.",
+    description: "ALWAYS use this tool for any question about current events, recent news, latest updates, today's information, or anything that requires up-to-date data. Your training data is outdated. Never answer news or current events questions from memory. Always call this tool first.",
     inputSchema: {
       type: "object",
       properties: {

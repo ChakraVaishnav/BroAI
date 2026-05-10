@@ -2,17 +2,23 @@ import "dotenv/config";
 import { ChatGroq } from "@langchain/groq";
 import { ChatOpenAI } from "@langchain/openai";
 
+/**
+ * PROBLEM 3 FIX: Use ONLY llama-3.3-70b-versatile.
+ * The 8b model is too weak and hallucinates heavily.
+ */
+const PRIMARY_MODEL = "llama-3.3-70b-versatile";
+
 function isRateLimitError(error) {
   const message = String(error?.message || error || "").toLowerCase();
   return message.includes("rate limit") || message.includes("rate_limit_exceeded") || message.includes("429");
 }
 
-function createGroqModel(modelName, apiKey = process.env.GROQ_API_KEY) {
+function createGroqModel(apiKey) {
   return new ChatGroq({
     apiKey,
-    model: modelName,
+    model: PRIMARY_MODEL,
     temperature: 0,
-    maxRetries: 0, // fail fast — let our cascade handle retries
+    maxRetries: 0,
   });
 }
 
@@ -34,23 +40,25 @@ function createNvidiaModel() {
 function getCandidateModels() {
   const candidates = [];
 
-  // ── Key 1 (primary) ──────────────────────────────────────────
-  if (process.env.GROQ_API_KEY && process.env.GROQ_MODEL_1) {
-    candidates.push({ provider: "groq", modelName: process.env.GROQ_MODEL_1, client: createGroqModel(process.env.GROQ_MODEL_1, process.env.GROQ_API_KEY) });
-  }
-  if (process.env.GROQ_API_KEY && process.env.GROQ_MODEL_2 && process.env.GROQ_MODEL_2 !== process.env.GROQ_MODEL_1) {
-    candidates.push({ provider: "groq", modelName: process.env.GROQ_MODEL_2, client: createGroqModel(process.env.GROQ_MODEL_2, process.env.GROQ_API_KEY) });
-  }
-
-  // ── Key 2 (fallback when key1 hits rate limit) ───────────────
-  if (process.env.GROQ_API_KEY_2 && process.env.GROQ_MODEL_1) {
-    candidates.push({ provider: "groq-key2", modelName: process.env.GROQ_MODEL_1, client: createGroqModel(process.env.GROQ_MODEL_1, process.env.GROQ_API_KEY_2) });
-  }
-  if (process.env.GROQ_API_KEY_2 && process.env.GROQ_MODEL_2 && process.env.GROQ_MODEL_2 !== process.env.GROQ_MODEL_1) {
-    candidates.push({ provider: "groq-key2", modelName: process.env.GROQ_MODEL_2, client: createGroqModel(process.env.GROQ_MODEL_2, process.env.GROQ_API_KEY_2) });
+  // Try Groq with Primary Key
+  if (process.env.GROQ_API_KEY) {
+    candidates.push({ 
+      provider: "groq-primary", 
+      modelName: PRIMARY_MODEL, 
+      client: createGroqModel(process.env.GROQ_API_KEY) 
+    });
   }
 
-  // ── NVIDIA (last resort) ─────────────────────────────────────
+  // Try Groq with Secondary Key (Backup for rate limits)
+  if (process.env.GROQ_API_KEY_2) {
+    candidates.push({ 
+      provider: "groq-backup", 
+      modelName: PRIMARY_MODEL, 
+      client: createGroqModel(process.env.GROQ_API_KEY_2) 
+    });
+  }
+
+  // NVIDIA as last resort (if configured)
   const nvidiaModel = createNvidiaModel();
   if (nvidiaModel) {
     candidates.push({ provider: "nvidia", modelName: process.env.NVIDIA_PRIMARY_MODEL, client: nvidiaModel });
@@ -96,7 +104,7 @@ export function getLlmWithTools(tools) {
         throw rateLimitError;
       }
 
-      throw new Error(lastError ? lastError.message : "No LLM candidates are configured");
+      throw new Error(lastError ? lastError.message : "No LLM candidates are configured or all failed.");
     },
   };
 }

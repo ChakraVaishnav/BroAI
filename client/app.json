@@ -4,7 +4,7 @@
     "slug": "broai",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/bro_ai_icon_v2.svg",
+    "icon": "./assets/bro_ai_icon_v2.png",
     "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash.png",
@@ -20,7 +20,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/bro_ai_icon_v2.svg",
+        "foregroundImage": "./assets/bro_ai_icon_v2.png",
         "backgroundColor": "#000000"
       },
       "package": "com.chakravaishnav.broai"

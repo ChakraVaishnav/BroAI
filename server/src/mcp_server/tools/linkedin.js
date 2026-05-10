@@ -12,7 +12,7 @@
 export const linkedinTools = [
   {
     name: "post_to_linkedin",
-    description: "Posts a text update to LinkedIn.",
+    description: "Use this tool ONLY when Sir has explicitly said 'post this on LinkedIn', 'go ahead and post', or 'post it'. Never post on LinkedIn just because Sir asked a question about LinkedIn capability or mentioned LinkedIn in conversation. Asking 'can you post on LinkedIn?' is NOT permission to post.",
     inputSchema: {
       type: "object",
       properties: {
