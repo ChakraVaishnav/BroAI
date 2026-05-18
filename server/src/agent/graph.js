@@ -2,8 +2,42 @@ import { END, MessagesAnnotation, StateGraph } from "@langchain/langgraph";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import { getLlmWithTools } from "../llm/groq.js";
 import * as mcpClient from "./mcpClient.js";
+import { buildPendingAction, clearPendingAction, getPendingAction, isConfirmationMessage, setPendingAction } from "./pendingAction.js";
 
-const DESTRUCTIVE_TOOLS = ["post_to_linkedin", "send_email", "delete_linkedin_post", "reply_to_linkedin_comment"];
+const DESTRUCTIVE_TOOLS = [
+  "post_to_linkedin",
+  "send_email",
+  "reply_to_email",
+  "delete_linkedin_post",
+  "reply_to_linkedin_comment",
+  "delete_event",
+];
+
+function getLastHumanText(messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (typeof message?._getType === "function" && message._getType() === "human") {
+      return String(message.content || "");
+    }
+  }
+  return "";
+}
+
+function parseToolArgs(toolCall) {
+  const toolArgs = toolCall.args || toolCall.function?.arguments;
+  if (typeof toolArgs === "string") {
+    try {
+      return JSON.parse(toolArgs);
+    } catch {
+      return {};
+    }
+  }
+  return toolArgs || {};
+}
+
+function isSuccessResult(result) {
+  return Boolean(result && typeof result === "object" && result.success === true);
+}
 
 function shouldContinue(state) {
   const messages = state.messages;
@@ -28,38 +62,33 @@ async function safetyCheckNode(state) {
   const messages = state.messages;
   const lastAiMessage = messages[messages.length - 1];
   const toolCalls = lastAiMessage.tool_calls || lastAiMessage.additional_kwargs?.tool_calls || [];
-  
+  const lastHumanText = getLastHumanText(messages);
+  const pendingAction = getPendingAction();
+
   const safetyResults = [];
 
   for (const toolCall of toolCalls) {
     const toolName = toolCall.name || toolCall.function?.name;
     
     if (DESTRUCTIVE_TOOLS.includes(toolName)) {
-      // Look back at conversation for confirmation
-      const history = messages.slice(-5);
-      const userContent = history
-        .filter(m => m._getType() === 'human')
-        .map(m => m.content.toLowerCase())
-        .join(' ');
+      const parsedArgs = parseToolArgs(toolCall);
+      const isConfirming = pendingAction
+        && pendingAction.toolName === toolName
+        && isConfirmationMessage(lastHumanText, pendingAction);
 
-      const negativeConstraint = userContent.includes("don't") || userContent.includes("do not") || userContent.includes("just write") || userContent.includes("only write");
-      const explicitYes = userContent.includes("yes") || userContent.includes("confirm") || userContent.includes("go ahead") || userContent.includes("post it") || userContent.includes("delete it");
-
-      if (negativeConstraint && !explicitYes) {
-        console.warn(`[SAFETY] Blocked destructive tool '${toolName}' due to negative constraint.`);
-        safetyResults.push(new ToolMessage({
-          content: `ERROR: Permission Denied. Sir explicitly said NOT to perform this action. Present the draft as text ONLY.`,
-          tool_call_id: toolCall.id,
-          name: toolName,
-        }));
-      } else if (!explicitYes) {
-        console.warn(`[SAFETY] Blocked destructive tool '${toolName}' awaiting explicit confirmation.`);
-        safetyResults.push(new ToolMessage({
-          content: `ERROR: Permission Required. Sir has not explicitly confirmed this specific action yet. Ask for 'Yes' or 'Confirm'.`,
-          tool_call_id: toolCall.id,
-          name: toolName,
-        }));
+      if (isConfirming) {
+        continue;
       }
+
+      const nextPending = buildPendingAction(toolName, parsedArgs);
+      setPendingAction(nextPending);
+
+      console.warn(`[SAFETY] Blocked destructive tool '${toolName}' awaiting explicit confirmation.`);
+      safetyResults.push(new ToolMessage({
+        content: nextPending.preview,
+        tool_call_id: toolCall.id,
+        name: toolName,
+      }));
     }
   }
 
@@ -75,6 +104,8 @@ async function safetyCheckNode(state) {
 async function toolNode(state) {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1];
+  const pendingAction = getPendingAction();
+  const lastHumanText = getLastHumanText(messages);
   
   const toolCalls = lastMessage.tool_calls?.length > 0
     ? lastMessage.tool_calls
@@ -83,14 +114,21 @@ async function toolNode(state) {
   const toolResults = await Promise.all(
     toolCalls.map(async (toolCall) => {
       const toolName = toolCall.name || toolCall.function?.name;
-      const toolArgs = toolCall.args || toolCall.function?.arguments;
-      const parsedArgs = typeof toolArgs === 'string' ? JSON.parse(toolArgs) : toolArgs;
+      const parsedArgs = parseToolArgs(toolCall);
+      const shouldUsePending = pendingAction
+        && pendingAction.toolName === toolName
+        && isConfirmationMessage(lastHumanText, pendingAction);
+      const effectiveArgs = shouldUsePending ? pendingAction.args : parsedArgs;
 
-      console.log('[TOOL EXECUTING]', toolName, JSON.stringify(parsedArgs));
+      console.log('[TOOL EXECUTING]', toolName, JSON.stringify(effectiveArgs));
 
       try {
-        const result = await mcpClient.callTool(toolName, parsedArgs || {});
+        const result = await mcpClient.callTool(toolName, effectiveArgs || {});
         console.log('[TOOL RESULT]', toolName, JSON.stringify(result).substring(0, 200));
+
+        if (shouldUsePending && isSuccessResult(result)) {
+          clearPendingAction();
+        }
         
         return new ToolMessage({
           content: typeof result === 'string' ? result : JSON.stringify(result),

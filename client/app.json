@@ -32,6 +32,24 @@
       "eas": {
         "projectId": "fc7f374e-2a8c-4a80-b853-151d41131223"
       }
-    }
+    },
+    "scheme": "broai",
+    "plugins": [
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "BroAIWidget",
+              "label": "Bro AI Assistant",
+              "minWidth": "300dp",
+              "minHeight": "100dp",
+              "description": "Quickly access Bro AI",
+              "updatePeriodMillis": 86400000
+            }
+          ]
+        }
+      ]
+    ]
   }
 }

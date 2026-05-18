@@ -1,63 +1,63 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, View, StyleSheet } from "react-native";
-import { theme } from "../styles/theme";
 
-export default function TypingIndicator() {
-  const pulse1 = useRef(new Animated.Value(0.35)).current;
-  const pulse2 = useRef(new Animated.Value(0.35)).current;
-  const pulse3 = useRef(new Animated.Value(0.35)).current;
+/**
+ * Waving 3-dot typing indicator.
+ * Dots animate with staggered vertical bounce (wave effect).
+ * Accepts a dotColor prop so it adapts to any bubble background.
+ */
+export default function TypingIndicator({ dotColor }) {
+  const y1 = useRef(new Animated.Value(0)).current;
+  const y2 = useRef(new Animated.Value(0)).current;
+  const y3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const createLoop = (value, delay) =>
+    const wave = (value, delay) =>
       Animated.loop(
         Animated.sequence([
           Animated.delay(delay),
-          Animated.timing(value, {
-            toValue: 1,
-            duration: 260,
+          Animated.spring(value, {
+            toValue: -6,
+            friction: 4,
+            tension: 120,
             useNativeDriver: true,
           }),
-          Animated.timing(value, {
-            toValue: 0.35,
-            duration: 260,
+          Animated.spring(value, {
+            toValue: 0,
+            friction: 4,
+            tension: 120,
             useNativeDriver: true,
           }),
+          // pause before repeating
+          Animated.delay(300),
         ])
       );
 
-    const anim1 = createLoop(pulse1, 0);
-    const anim2 = createLoop(pulse2, 120);
-    const anim3 = createLoop(pulse3, 240);
+    const a1 = wave(y1, 0);
+    const a2 = wave(y2, 120);
+    const a3 = wave(y3, 240);
 
-    anim1.start();
-    anim2.start();
-    anim3.start();
+    a1.start();
+    a2.start();
+    a3.start();
 
     return () => {
-      anim1.stop();
-      anim2.stop();
-      anim3.stop();
+      a1.stop();
+      a2.stop();
+      a3.stop();
     };
-  }, [pulse1, pulse2, pulse3]);
+  }, [y1, y2, y3]);
+
+  const color = dotColor || "#888888";
 
   return (
     <View style={styles.row}>
-      {[pulse1, pulse2, pulse3].map((pulse, index) => (
+      {[y1, y2, y3].map((y, index) => (
         <Animated.View
           key={index}
           style={[
             styles.dot,
-            {
-              opacity: pulse,
-              transform: [
-                {
-                  translateY: pulse.interpolate({
-                    inputRange: [0.35, 1],
-                    outputRange: [0, -2],
-                  }),
-                },
-              ],
-            },
+            { backgroundColor: color, transform: [{ translateY: y }] },
           ]}
         />
       ))}
@@ -69,13 +69,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingVertical: 2,
+    gap: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
   },
   dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: theme.colors.text,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
 });

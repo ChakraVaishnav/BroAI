@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment secrets
+.env
+
+# Runtime logs
+logs/
+*.log
+
+# User runtime data (memory.json stores personal user data)
+data/
+
+# One-off utility scripts (OAuth token helpers, not needed in repo)
+scripts/
+
+# Manual test scripts (not automated tests, just scratch runners)
+tests/
+
+# OS files
+.DS_Store
+Thumbs.db

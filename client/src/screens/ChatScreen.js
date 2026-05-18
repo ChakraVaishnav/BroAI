@@ -7,11 +7,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
-  Keyboard,
-  ActivityIndicator,
   Animated,
-  StatusBar as RNStatusBar,
+  AppState,
+  Image,
 } from "react-native";
+import { BlurView } from "expo-blur";
+import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme, theme } from "../styles/theme";
@@ -20,40 +22,96 @@ import ChatInput from "../components/ChatInput";
 import Sidebar from "../components/Sidebar";
 import { getAllChats, saveChat, deleteChat } from "../storage/chatStorage";
 import { greetings } from "../data/greetings";
+import { API_BASE_URL } from "../utils/api";
+import TypingIndicator from "../components/TypingIndicator";
+import SkeletonLoader from "../components/SkeletonLoader";
+import { requestNotificationPermission, notifyResponseReady } from "../utils/notifications";
 
-// Connect to production backend
-const BACKEND_URL = "https://broai-bmmm.onrender.com";
+// Backend URL from environment
+const BACKEND_URL = API_BASE_URL;
 
-const ChatScreen = () => {
+function parseSSEEvent(rawEvent) {
+  const lines = rawEvent.split(/\r?\n/);
+  let event = "message";
+  const dataLines = [];
+
+  for (const line of lines) {
+    if (!line || line.startsWith(":")) {
+      continue;
+    }
+
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim() || "message";
+      continue;
+    }
+
+    if (line.startsWith("data:")) {
+      // Preserve leading whitespace in streamed tokens.
+      dataLines.push(line.startsWith("data: ") ? line.slice(6) : line.slice(5));
+    }
+  }
+
+  return { event, data: dataLines.join("\n") };
+}
+
+const ChatScreen = ({ initialUrl, clearUrl }) => {
   const [messages, setMessages] = useState([]);
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [currentTrace, setCurrentTrace] = useState("");
   const [greeting, setGreeting] = useState("");
+  const [showFab, setShowFab] = useState(false);
+  const [isChatsLoading, setIsChatsLoading] = useState(true);
+
+  const appState = useRef(AppState.currentState);
 
   const flatListRef = useRef(null);
   const abortControllerRef = useRef(null);
-  const traceIntervalRef = useRef(null);
+  const xhrRef = useRef(null);
   const insets = useSafeAreaInsets();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const menuScale = useRef(new Animated.Value(1)).current;
-  const { colors, isDark } = useAppTheme();
+  const { colors, isDark, toggleTheme } = useAppTheme();
 
   useEffect(() => {
     loadChats();
+    requestNotificationPermission();
     setGreeting(greetings[Math.floor(Math.random() * greetings.length)]);
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 800,
       useNativeDriver: true,
     }).start();
+
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
+  useEffect(() => {
+    if (initialUrl && chats.length > 0) {
+      if (initialUrl.includes("new")) {
+        handleNewChat();
+      } else if (initialUrl.includes("last")) {
+        // Select the most recent chat if available
+        if (chats[0]) {
+          handleSelectChat(chats[0].id);
+        }
+      }
+      if (clearUrl) clearUrl();
+    }
+  }, [initialUrl, chats]);
+
   const loadChats = async () => {
+    setIsChatsLoading(true);
     const loadedChats = await getAllChats();
     setChats(loadedChats);
+    setIsChatsLoading(false);
   };
 
   const handleMenuPress = () => {
@@ -87,19 +145,13 @@ const ChatScreen = () => {
   };
 
   const handleSend = async (text) => {
+    // Phase 1: Send haptic
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
     const userMessage = { id: Date.now().toString(), text, isUser: true };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setIsGenerating(true);
-
-    const traceMessages = ["Thinking...", "Scanning tools...", "Synthesizing...", "Finalizing..."];
-    let traceIndex = 0;
-    setCurrentTrace(traceMessages[0]);
-
-    traceIntervalRef.current = setInterval(() => {
-      traceIndex = (traceIndex + 1) % traceMessages.length;
-      setCurrentTrace(traceMessages[traceIndex]);
-    }, 1500);
 
     let chatId = activeChatId;
     if (!chatId) {
@@ -107,49 +159,143 @@ const ChatScreen = () => {
       setActiveChatId(chatId);
     }
 
-    // Map local messages to OpenAI-style history for the backend (Limit to last 10 for performance)
-    const history = messages.slice(-10).map(m => ({
-      role: m.isUser ? "user" : "assistant",
-      content: m.text
-    }));
+    // ✅ Fix 2: Removed dead `history` field — backend maintains its own per-session history.
+    // Send sessionId (chatId) so the backend scopes history to this conversation.
 
     try {
       console.log(`\n[FRONTEND] 🚀 Sending message to backend: "${text}"`);
       console.log(`[FRONTEND] 🔗 URL: ${BACKEND_URL}/chat`);
 
-      abortControllerRef.current = new AbortController();
-      const response = await fetch(`${BACKEND_URL}/chat`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.EXPO_PUBLIC_BRO_AI_SECRET_TOKEN}`
-        },
-        body: JSON.stringify({ message: text, history }),
-        signal: abortControllerRef.current.signal,
-      });
+      const aiMessageId = (Date.now() + 1).toString();
+      let streamedText = "";
+      let finalText = "";
+      let processedLength = 0;
+      let buffer = "";
+      let finished = false;
+      let responseMeta = null; // timeTaken, model, attempts from done event
+      let hapticFired = false;
 
-      console.log(`[FRONTEND] 📥 Received status: ${response.status}`);
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error(`[FRONTEND] ❌ Server error text:`, errText);
-        throw new Error(`Server error: ${response.status} - ${errText}`);
-      }
-
-      const data = await response.json();
-      console.log(`[FRONTEND] ✅ Received JSON data:`, data);
-
-      if (traceIntervalRef.current) clearInterval(traceIntervalRef.current);
-
-      const aiMessage = {
-        id: (Date.now() + 1).toString(),
-        text: data.reply || data.response || "Error: No reply found in backend response.",
-        isUser: false,
-        modelLabel: "BRO AI",
+      const updateLiveMessage = (textValue, meta = null) => {
+        const aiMessage = {
+          id: aiMessageId,
+          text: textValue,
+          isUser: false,
+          modelLabel: "BRO AI",
+          meta,
+          isTyping: !textValue, // show typing dots when no text yet
+          isStreaming: !finished && !!textValue, // show streaming cursor
+        };
+        setMessages([...newMessages, aiMessage]);
       };
 
-      const updatedMessages = [...newMessages, aiMessage];
-      setMessages(updatedMessages);
+      updateLiveMessage("");
+
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhrRef.current = xhr;
+
+        xhr.open("POST", `${BACKEND_URL}/chat`, true);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.setRequestHeader("Authorization", `Bearer ${process.env.EXPO_PUBLIC_BRO_AI_SECRET_TOKEN}`);
+        xhr.timeout = 0;
+
+        xhr.onreadystatechange = () => {
+          if (xhr.readyState === 2) {
+            console.log(`[FRONTEND] 📥 Received status: ${xhr.status}`);
+          }
+        };
+
+        xhr.onprogress = () => {
+          const nextChunk = xhr.responseText.slice(processedLength);
+          processedLength = xhr.responseText.length;
+          buffer += nextChunk;
+
+          const events = buffer.split(/\r?\n\r?\n/);
+          buffer = events.pop() || "";
+
+          for (const rawEvent of events) {
+            const parsed = parseSSEEvent(rawEvent);
+            if (!parsed.data && parsed.event !== "done") {
+              continue;
+            }
+
+            if (parsed.event === "token" || parsed.event === "message") {
+              if (!hapticFired && parsed.event === "token") {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                hapticFired = true;
+              }
+              streamedText += parsed.data;
+              updateLiveMessage(streamedText);
+            } else if (parsed.event === "preview" || parsed.event === "final") {
+              finalText += parsed.data;
+              updateLiveMessage(finalText);
+            } else if (parsed.event === "error") {
+              finished = true;
+              reject(new Error(parsed.data || "Streaming error from server."));
+              return;
+            } else if (parsed.event === "done") {
+              finished = true;
+              try { responseMeta = JSON.parse(parsed.data); } catch { /* ignore */ }
+            }
+          }
+        };
+
+        xhr.onerror = () => {
+          if (!finished) {
+            reject(new Error("Network error while streaming response."));
+          }
+        };
+
+        xhr.onabort = () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        };
+
+        xhr.onloadend = () => {
+          try {
+            if (!finished && xhr.status >= 400) {
+              reject(new Error(`Server error: ${xhr.status} - ${xhr.responseText || "Unknown error"}`));
+              return;
+            }
+
+            if (buffer.trim()) {
+              const parsed = parseSSEEvent(buffer);
+              if (parsed.event === "token" || parsed.event === "message") {
+                streamedText += parsed.data;
+              } else if (parsed.event === "preview" || parsed.event === "final") {
+                finalText += parsed.data;
+              } else if (parsed.event === "error") {
+                reject(new Error(parsed.data || "Streaming error from server."));
+                return;
+              }
+            }
+
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        };
+
+        xhr.send(JSON.stringify({ message: text, sessionId: chatId }));
+      });
+
+      const replyText = (finalText || streamedText).trim() || "Error: No reply found in backend response.";
+      updateLiveMessage(replyText, responseMeta);
+
+      const updatedMessages = [
+        ...newMessages,
+        {
+          id: aiMessageId,
+          text: replyText,
+          isUser: false,
+          modelLabel: "BRO AI",
+          meta: responseMeta, // { timeTaken, model, attempts }
+        },
+      ];
+
+      // Phase 1: Notify if backgrounded
+      if (appState.current.match(/inactive|background/)) {
+        notifyResponseReady(replyText);
+      }
 
       await saveChat(chatId, {
         messages: updatedMessages,
@@ -157,31 +303,40 @@ const ChatScreen = () => {
       });
       loadChats();
 
-    } catch (error) {
-      if (error.name !== "AbortError") {
-        console.error("\n[FRONTEND] ❌ Chat error:", error);
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          console.error("\n[FRONTEND] ❌ Chat error:", error);
 
-        // Add an error message bubble so you can see it in the UI!
-        const errorMessage = {
-          id: (Date.now() + 1).toString(),
-          text: `Connection Error: ${error.message}`,
-          isUser: false,
-          modelLabel: "SYSTEM ERROR",
-        };
-        setMessages(msgs => [...msgs, errorMessage]);
-      }
-    } finally {
+          // Replace the stuck typing bubble with the error message
+          const errorMessage = {
+            id: aiMessageId,
+            text: `Connection Error: ${error.message}`,
+            isUser: false,
+            modelLabel: "SYSTEM ERROR",
+            isTyping: false,
+            isStreaming: false,
+          };
+          
+          setMessages([...newMessages, errorMessage]);
+        }
+      } finally {
       setIsGenerating(false);
-      setCurrentTrace("");
-      if (traceIntervalRef.current) clearInterval(traceIntervalRef.current);
     }
   };
 
   const handleStop = () => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
-    if (traceIntervalRef.current) clearInterval(traceIntervalRef.current);
+    if (xhrRef.current) xhrRef.current.abort();
     setIsGenerating(false);
-    setCurrentTrace("");
+  };
+
+  const handleScroll = (e) => {
+    const offsetY = e.nativeEvent.contentOffset.y;
+    setShowFab(offsetY > 200);
+  };
+
+  const scrollToBottom = () => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
   return (
@@ -196,20 +351,28 @@ const ChatScreen = () => {
         activeChatId={activeChatId}
       />
 
-      <Animated.View style={[styles.header, { paddingTop: Math.max(insets.top, 16), opacity: fadeAnim }]}>
-        <Animated.View style={{ transform: [{ scale: menuScale }] }}>
-          <TouchableOpacity
-            onPress={handleMenuPress}
-            style={styles.menuButton}
-            activeOpacity={1}
-          >
-            <Ionicons name="menu-outline" size={32} color={colors.text} />
-          </TouchableOpacity>
-        </Animated.View>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>BRO AI</Text>
-        <TouchableOpacity style={styles.menuButton} onPress={handleNewChat}>
-          <Ionicons name="add" size={28} color={colors.text} />
-        </TouchableOpacity>
+      <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
+        <BlurView 
+          intensity={isDark ? 80 : 100} 
+          tint={isDark ? "dark" : "light"} 
+          style={StyleSheet.absoluteFill} 
+        />
+        <View style={[styles.headerContent, { paddingTop: Math.max(insets.top, 16) }]}>
+          <Animated.View style={{ transform: [{ scale: menuScale }] }}>
+            <TouchableOpacity onPress={handleMenuPress} style={styles.menuButton} activeOpacity={0.7}>
+              <Ionicons name="menu-outline" size={28} color={colors.text} />
+            </TouchableOpacity>
+          </Animated.View>
+          <View style={{ flex: 1 }} />
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.menuButton} onPress={toggleTheme}>
+              <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={22} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuButton} onPress={handleNewChat}>
+              <Ionicons name="add" size={26} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </Animated.View>
 
       <KeyboardAvoidingView
@@ -219,13 +382,19 @@ const ChatScreen = () => {
       >
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={messages.slice().reverse()}
+          inverted
           keyExtractor={(item) => item.id}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           renderItem={({ item }) => (
             <MessageBubble
               message={item.text}
               isUser={item.isUser}
               modelLabel={item.modelLabel}
+              meta={item.meta}
+              isTyping={item.isTyping}
+              isStreaming={item.isStreaming}
             />
           )}
           contentContainerStyle={[
@@ -234,17 +403,29 @@ const ChatScreen = () => {
           ]}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           ListEmptyComponent={() => (
-            <Animated.View style={[styles.greetingContainer, { opacity: fadeAnim }]}>
-              <Text style={[styles.greetingText, { color: colors.text }]}>{greeting}</Text>
-              <Text style={[styles.greetingSub, { color: colors.textSecondary }]}>Your personal intelligence, unlocked.</Text>
-            </Animated.View>
+            isChatsLoading ? (
+              <SkeletonLoader />
+            ) : (
+              <Animated.View style={[styles.greetingContainer, { opacity: fadeAnim }]}>
+                <LinearGradient
+                  colors={isDark ? ["rgba(255,255,255,0.05)", "transparent"] : ["rgba(0,0,0,0.03)", "transparent"]}
+                  style={styles.glowBg}
+                />
+                
+                <Text style={[styles.greetingText, { color: colors.text }]}>{greeting}</Text>
+                <Text style={[styles.greetingSub, { color: colors.textSecondary }]}>Your personal intelligence, unlocked.</Text>
+                
+                <View style={styles.quickReplies}>
+                  {["Check my calendar", "Read my latest emails", "Any news in AI?"].map((q, i) => (
+                    <TouchableOpacity key={i} style={[styles.chip, { borderColor: colors.border }]} onPress={() => handleSend(q)}>
+                      <Text style={[styles.chipText, { color: colors.textSecondary }]}>{q}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </Animated.View>
+            )
           )}
-          ListFooterComponent={() => isGenerating && (
-            <View style={[styles.traceContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <ActivityIndicator size="small" color={colors.textSecondary} style={{ marginRight: 12 }} />
-              <Text style={[styles.traceText, { color: colors.textSecondary }]}>{currentTrace}</Text>
-            </View>
-          )}
+          ListFooterComponent={() => null}
         />
 
         <ChatInput
@@ -254,6 +435,14 @@ const ChatScreen = () => {
         />
         <View style={{ height: Math.max(insets.bottom, 12) }} />
       </KeyboardAvoidingView>
+
+      {showFab && (
+        <Animated.View style={styles.fabContainer}>
+          <TouchableOpacity style={[styles.fab, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={scrollToBottom} activeOpacity={0.8}>
+            <Ionicons name="arrow-down" size={20} color={colors.text} />
+          </TouchableOpacity>
+        </Animated.View>
+      )}
     </View>
   );
 };
@@ -263,13 +452,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(128,128,128,0.2)",
+    overflow: "hidden",
+  },
+  headerContent: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: theme.spacing.md,
     paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderColor: "#222", // Default, will be overridden or we can remove border, let's keep border
   },
   menuButton: {
     width: 44,
@@ -282,22 +479,35 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 6,
     textTransform: "uppercase",
-    marginLeft: 10,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   content: {
     flex: 1,
+    marginTop: 100, // account for absolute header
   },
   listContent: {
     paddingVertical: 16,
+    flexGrow: 1,
   },
   emptyList: {
-    flex: 1,
     justifyContent: "center",
   },
   greetingContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 40,
+    paddingHorizontal: 30,
+    marginTop: 60,
+    transform: [{ scaleY: -1 }, { scaleX: -1 }], // Fixes React Native Android inverted FlatList mirroring
+  },
+  glowBg: {
+    position: "absolute",
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    top: -100,
   },
   greetingText: {
     fontSize: 32,
@@ -313,21 +523,42 @@ const styles = StyleSheet.create({
     marginTop: 20,
     textAlign: "center",
   },
-  traceContainer: {
-    flexDirection: "row",
+  quickReplies: {
+    marginTop: 40,
+    gap: 12,
     alignItems: "center",
-    paddingHorizontal: 20,
-    marginVertical: 20,
-    padding: 14,
-    borderRadius: 16,
-    alignSelf: "center",
-    borderWidth: 1,
   },
-  traceText: {
+  chip: {
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    backgroundColor: "transparent",
+  },
+  chipText: {
     fontSize: 13,
     fontWeight: "500",
-    letterSpacing: 1,
   },
+  fabContainer: {
+    position: "absolute",
+    bottom: 90,
+    alignSelf: "center",
+    zIndex: 100,
+  },
+  fab: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
 });
 
 export default ChatScreen;

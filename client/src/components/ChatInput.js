@@ -1,5 +1,12 @@
-import React, { useState } from "react";
-import { View, TextInput, TouchableOpacity, StyleSheet, Keyboard } from "react-native";
+import React, { useState, useRef } from "react";
+import {
+  View,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
+} from "react-native";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme, theme } from "../styles/theme";
 
@@ -8,8 +15,28 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
   const [inputHeight, setInputHeight] = useState(45);
   const { colors, isDark } = useAppTheme();
 
+  // Button press scale animation
+  const buttonScale = useRef(new Animated.Value(1)).current;
+  const buttonGlow = useRef(new Animated.Value(0)).current;
+
   const handleSend = () => {
     if (text.trim()) {
+      // Press animation: quick scale down then spring back
+      Animated.sequence([
+        Animated.spring(buttonScale, {
+          toValue: 0.88,
+          friction: 4,
+          tension: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(buttonScale, {
+          toValue: 1,
+          friction: 4,
+          tension: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
       onSend(text.trim());
       setText("");
       setInputHeight(45);
@@ -18,52 +45,87 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
 
   const handleContentSizeChange = (event) => {
     const height = event.nativeEvent.contentSize.height;
-    // Initial height is ~45. Max height 3x ~ 135
     setInputHeight(Math.min(135, Math.max(45, height)));
   };
 
+  const hasText = text.trim().length > 0;
+
+  const buttonBg = isGenerating
+    ? colors.error || "#FF3B30"
+    : hasText
+    ? colors.text
+    : colors.border;
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.inputWrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <BlurView 
+      intensity={isDark ? 60 : 80} 
+      tint={isDark ? "dark" : "light"} 
+      style={styles.container}
+    >
+      <View
+        style={[
+          styles.inputWrapper,
+          {
+            backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)",
+            borderColor: hasText ? colors.text : "rgba(128,128,128,0.2)",
+          },
+        ]}
+      >
         <TextInput
           style={[styles.input, { height: inputHeight, color: colors.text }]}
-          placeholder="Type a message..."
+          placeholder="Ask anything..."
           placeholderTextColor={colors.textSecondary}
           value={text}
           onChangeText={setText}
           multiline
           onContentSizeChange={handleContentSizeChange}
           selectionColor={colors.accent}
+          onSubmitEditing={handleSend}
         />
-        {isGenerating ? (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.text }]} onPress={onStop}>
-            <Ionicons name="stop" size={24} color={colors.background} />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: colors.text }, !text.trim() && styles.disabledButton]} 
-            onPress={handleSend}
-            disabled={!text.trim()}
+
+        <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              { backgroundColor: buttonBg },
+              !hasText && !isGenerating && styles.disabledButton,
+            ]}
+            onPress={isGenerating ? onStop : handleSend}
+            disabled={!hasText && !isGenerating}
+            activeOpacity={0.8}
           >
-            <Ionicons name="arrow-up" size={24} color={colors.background} />
+            <Ionicons
+              name={isGenerating ? "stop" : "arrow-up"}
+              size={20}
+              color={
+                isGenerating
+                  ? "#FFFFFF"
+                  : hasText
+                  ? colors.background
+                  : colors.textSecondary
+              }
+            />
           </TouchableOpacity>
-        )}
+        </Animated.View>
       </View>
-    </View>
+    </BlurView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(128,128,128,0.2)",
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "flex-end",
-    borderRadius: 25,
-    paddingHorizontal: theme.spacing.md,
+    borderRadius: 24,
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   input: {
     flex: 1,
@@ -71,6 +133,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
     maxHeight: 135,
+    lineHeight: 22,
   },
   button: {
     width: 36,
@@ -78,11 +141,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
-    marginLeft: theme.spacing.sm,
+    marginLeft: 10,
     marginBottom: 2,
   },
   disabledButton: {
-    opacity: 0.3,
+    opacity: 0.25,
   },
 });
 

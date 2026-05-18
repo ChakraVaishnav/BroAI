@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const memoryPath = path.join(__dirname, "memory.json");
+const memoryPath = path.join(__dirname, "../../data/memory.json");
 
 export function readMemory() {
   try {

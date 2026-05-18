@@ -6,7 +6,12 @@ const DEFAULT_BASE_URL = Platform.select({
   default: "http://localhost:3000",
 });
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_BROAI_API_URL || DEFAULT_BASE_URL;
+const RUNTIME_ENV = process.env.EXPO_PUBLIC_NODE_ENV || process.env.NODE_ENV || "development";
+const ENV_BASE_URL = RUNTIME_ENV === "production"
+  ? process.env.EXPO_PUBLIC_BROAI_API_URL_PROD
+  : process.env.EXPO_PUBLIC_BROAI_API_URL_DEV;
+
+export const API_BASE_URL = ENV_BASE_URL || process.env.EXPO_PUBLIC_BROAI_API_URL || DEFAULT_BASE_URL;
 
 export async function sendChatMessage(message, signal) {
   const response = await fetch(`${API_BASE_URL}/chat`, {

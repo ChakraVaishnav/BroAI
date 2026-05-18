@@ -62,41 +62,59 @@ const Sidebar = ({ isOpen, onClose, chats, onSelectChat, onDeleteChat, onNewChat
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Empty for now, bro.</Text>
             </View>
           ) : (
-            chats.map((chat) => (
-              <TouchableOpacity 
-                key={chat.id} 
-                activeOpacity={0.7}
-                style={[
-                  styles.chatItem, 
-                  activeChatId === chat.id && { backgroundColor: isDark ? "#222" : "#E5E5E5" }
-                ]}
-                onPress={() => {
-                  onSelectChat(chat.id);
-                  onClose();
-                }}
-              >
-                <View style={[styles.chatIcon, { backgroundColor: isDark ? "#111" : "#F5F5F5" }, activeChatId === chat.id && { backgroundColor: colors.text }]}>
-                  <Ionicons 
-                    name="chatbubble-outline" 
-                    size={16} 
-                    color={activeChatId === chat.id ? colors.background : colors.iconInactive} 
-                  />
-                </View>
-                <Text 
-                  numberOfLines={1} 
-                  style={[styles.chatName, { color: colors.textSecondary }, activeChatId === chat.id && { color: colors.text, fontWeight: "600" }]}
+            chats.map((chat) => {
+              // First user message = title; first AI reply = preview
+              const previewMsg = chat.messages?.find(m => !m.isUser);
+              const previewText = previewMsg?.text
+                ? previewMsg.text.replace(/\n/g, " ").slice(0, 55) + (previewMsg.text.length > 55 ? "…" : "")
+                : null;
+
+              return (
+                <TouchableOpacity
+                  key={chat.id}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.chatItem,
+                    activeChatId === chat.id && { backgroundColor: isDark ? "#222" : "#E5E5E5" }
+                  ]}
+                  onPress={() => {
+                    onSelectChat(chat.id);
+                    onClose();
+                  }}
                 >
-                  {chat.messages[0]?.text || "New Chat"}
-                </Text>
-                <TouchableOpacity 
-                  onPress={() => onDeleteChat(chat.id)} 
-                  style={styles.deleteBtn}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="trash-outline" size={16} color={colors.error} />
+                  <View style={[styles.chatIcon, { backgroundColor: isDark ? "#111" : "#F5F5F5" }, activeChatId === chat.id && { backgroundColor: colors.text }]}>
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={16}
+                      color={activeChatId === chat.id ? colors.background : colors.iconInactive}
+                    />
+                  </View>
+                  <View style={{ flex: 1, marginRight: 4 }}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.chatName, { color: colors.textSecondary }, activeChatId === chat.id && { color: colors.text, fontWeight: "600" }]}
+                    >
+                      {chat.messages[0]?.text || "New Chat"}
+                    </Text>
+                    {previewText && (
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.chatPreview, { color: colors.textSecondary }]}
+                      >
+                        {previewText}
+                      </Text>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => onDeleteChat(chat.id)}
+                    style={styles.deleteBtn}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="trash-outline" size={15} color={colors.error} />
+                  </TouchableOpacity>
                 </TouchableOpacity>
-              </TouchableOpacity>
-            ))
+              );
+            })
           )}
         </ScrollView>
 
@@ -192,8 +210,13 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   chatName: {
-    fontSize: 15,
+    fontSize: 14,
     flex: 1,
+  },
+  chatPreview: {
+    fontSize: 11,
+    opacity: 0.55,
+    marginTop: 2,
   },
   deleteBtn: {
     padding: 8,
