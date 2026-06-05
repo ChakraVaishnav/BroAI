@@ -20,3 +20,9 @@ tests/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Test and scratch scripts
+test_*.js
+list_gemini_models.js
+openapi*.yaml
+openapi*.json

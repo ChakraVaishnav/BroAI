@@ -1,6 +1,6 @@
 import { END, MessagesAnnotation, StateGraph } from "@langchain/langgraph";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
-import { getLlmWithTools } from "../llm/groq.js";
+import { getLlmWithTools } from "../llm/provider.js";
 import * as mcpClient from "./mcpClient.js";
 import { buildPendingAction, clearPendingAction, getPendingAction, isConfirmationMessage, setPendingAction } from "./pendingAction.js";
 
@@ -72,9 +72,16 @@ async function safetyCheckNode(state) {
     
     if (DESTRUCTIVE_TOOLS.includes(toolName)) {
       const parsedArgs = parseToolArgs(toolCall);
-      const isConfirming = pendingAction
+      
+      // Check if user is confirming the previous pending action
+      let isConfirming = pendingAction
         && pendingAction.toolName === toolName
         && isConfirmationMessage(lastHumanText, pendingAction);
+
+      // Or check if user just preemptively confirmed it in their current message
+      if (!isConfirming) {
+        isConfirming = isConfirmationMessage(lastHumanText, { toolName });
+      }
 
       if (isConfirming) {
         continue;
@@ -156,7 +163,9 @@ export async function buildGraph() {
   const graph = new StateGraph(MessagesAnnotation)
     .addNode("agentNode", async (state) => {
       try {
+        console.log("[AGENT NODE] Invoking LLM...");
         const response = await llmWithTools.invoke(state.messages);
+        console.log("[AGENT NODE] LLM Response received:", !!response.tool_calls);
         return { messages: [response] };
       } catch (err) {
         console.error("[AGENT ERROR]", err);

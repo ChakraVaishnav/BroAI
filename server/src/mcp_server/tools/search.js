@@ -38,7 +38,7 @@ async function serperSearch(query) {
 export const searchTools = [
   {
     name: "web_search",
-    description: "ALWAYS use this tool for any question about current events, recent news, latest updates, sports results, scores, today's information, or anything that requires up-to-date data. Your training data is outdated. Never answer news, sports, or current events questions from memory. Always call this tool first before answering.",
+    description: "Search the internet for current information. Call this for: news, prices, scores, recent events, anything with words like \"latest\", \"now\", \"today\", \"current\". Never answer time-sensitive questions from memory.",
     inputSchema: {
       type: "object",
       properties: {

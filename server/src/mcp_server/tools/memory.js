@@ -3,7 +3,7 @@ import { readMemory, saveMemory } from "../../memory/memory.js";
 export const memoryTools = [
   {
     name: "store_memory",
-    description: "Stores important information to remember for future sessions.",
+    description: "Save important facts about Sir for future sessions. Use proactively when Sir shares something worth remembering — preferences, project details, personal context.",
     inputSchema: {
       type: "object",
       properties: {

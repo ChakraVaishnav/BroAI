@@ -23,10 +23,10 @@ export function buildZodShape(schema = {}) {
 
     switch (fieldSchema?.type) {
       case "number":
-        field = z.number();
+        field = z.coerce.number();
         break;
       case "integer":
-        field = z.number().int();
+        field = z.coerce.number().int();
         break;
       case "boolean":
         field = z.boolean();

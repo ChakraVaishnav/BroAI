@@ -12,14 +12,16 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme, theme } from "../styles/theme";
+import { getModelsStatus } from "../utils/api";
 
 const { width } = Dimensions.get("window");
-const SIDEBAR_WIDTH = width * 0.8;
+const SIDEBAR_WIDTH = width * 0.85;
 
 const Sidebar = ({ isOpen, onClose, chats, onSelectChat, onDeleteChat, onNewChat, activeChatId }) => {
   const { colors, isDark, toggleTheme } = useAppTheme();
   const slideAnim = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+  const [modelsStatus, setModelsStatus] = useState([]);
 
   useEffect(() => {
     Animated.parallel([
@@ -36,6 +38,24 @@ const Sidebar = ({ isOpen, onClose, chats, onSelectChat, onDeleteChat, onNewChat
     ]).start();
   }, [isOpen]);
 
+  useEffect(() => {
+    let interval;
+    if (isOpen) {
+      getModelsStatus().then(setModelsStatus).catch(() => {});
+      interval = setInterval(() => {
+        getModelsStatus().then(setModelsStatus).catch(() => {});
+      }, 1000); // Poll every second for live countdown
+    }
+    return () => clearInterval(interval);
+  }, [isOpen]);
+
+  const formatTime = (ms) => {
+    if (!ms || ms <= 0) return "";
+    const totalSecs = Math.ceil(ms / 1000);
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    return `${m > 0 ? `${m}m ` : ''}${s}s`;
+  };
 
   return (
     <View style={[styles.wrapper, !isOpen && { pointerEvents: "none" }]}>
@@ -55,7 +75,45 @@ const Sidebar = ({ isOpen, onClose, chats, onSelectChat, onDeleteChat, onNewChat
         </View>
 
         <ScrollView style={styles.chatList} showsVerticalScrollIndicator={false}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Recent Chats</Text>
+          {/* Model Diagnostics Section */}
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Network Status</Text>
+          <View style={styles.modelsContainer}>
+            {modelsStatus.map((model) => (
+              <View key={model.id} style={[styles.modelCard, { backgroundColor: isDark ? "#1A1A1A" : "#F5F5F5", borderColor: colors.border }]}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <Text style={[styles.modelProvider, { color: colors.textSecondary }]}>{model.providerName}</Text>
+                  <View style={[styles.statusPill, 
+                    model.status === "Active" ? { backgroundColor: "rgba(76, 175, 80, 0.2)" } : 
+                    model.status === "Standby" ? { backgroundColor: "rgba(158, 158, 158, 0.2)" } : 
+                    { backgroundColor: "rgba(244, 67, 54, 0.2)" }]}>
+                    <View style={[styles.statusDot, 
+                      model.status === "Active" ? { backgroundColor: "#4CAF50" } : 
+                      model.status === "Standby" ? { backgroundColor: "#9E9E9E" } : 
+                      { backgroundColor: "#F44336" }]} />
+                    <Text style={[styles.statusText, 
+                      model.status === "Active" ? { color: "#4CAF50" } : 
+                      model.status === "Standby" ? { color: "#9E9E9E" } : 
+                      { color: "#F44336" }]}>
+                      {model.status}
+                    </Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
+                  <Text style={[styles.modelName, { color: colors.text }]}>{model.modelName}</Text>
+                  {model.remainingMs && (
+                    <Text style={[styles.cooldownText, { color: "#F44336" }]}>
+                      Resets in: {formatTime(model.remainingMs)}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))}
+            {modelsStatus.length === 0 && (
+              <Text style={{ color: colors.textSecondary, fontSize: 12, paddingHorizontal: 24, paddingBottom: 16 }}>Connecting to core...</Text>
+            )}
+          </View>
+
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 16 }]}>Recent Chats</Text>
           {chats.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="chatbubbles-outline" size={40} color={colors.border} />
@@ -63,7 +121,6 @@ const Sidebar = ({ isOpen, onClose, chats, onSelectChat, onDeleteChat, onNewChat
             </View>
           ) : (
             chats.map((chat) => {
-              // First user message = title; first AI reply = preview
               const previewMsg = chat.messages?.find(m => !m.isUser);
               const previewText = previewMsg?.text
                 ? previewMsg.text.replace(/\n/g, " ").slice(0, 55) + (previewMsg.text.length > 55 ? "…" : "")
@@ -246,6 +303,49 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
     marginLeft: 8,
+  },
+  modelsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  modelCard: {
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  modelProvider: {
+    fontSize: 11,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+  },
+  modelName: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  cooldownText: {
+    fontSize: 12,
+    fontWeight: "800",
   },
 });
 

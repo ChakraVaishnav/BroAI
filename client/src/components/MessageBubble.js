@@ -4,31 +4,9 @@ import * as Clipboard from "expo-clipboard";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
+import Markdown from "react-native-markdown-display";
 import { useAppTheme, theme } from "../styles/theme";
 import TypingIndicator from "./TypingIndicator";
-
-// ─── Markdown-lite renderer ─────────────────────────────────────────────────
-const renderFormattedText = (text, defaultStyle) => {
-  if (!text) return null;
-  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g);
-  return (
-    <Text style={defaultStyle} selectable={true}>
-      {parts.map((part, i) => {
-        if (part.startsWith("**") && part.endsWith("**"))
-          return <Text key={i} style={{ fontWeight: "900" }}>{part.slice(2, -2)}</Text>;
-        if (part.startsWith("*") && part.endsWith("*"))
-          return <Text key={i} style={{ fontStyle: "italic" }}>{part.slice(1, -1)}</Text>;
-        if (part.startsWith("`") && part.endsWith("`"))
-          return (
-            <Text key={i} style={{ fontFamily: "monospace", backgroundColor: "rgba(128,128,128,0.2)" }}>
-              {" "}{part.slice(1, -1)}{" "}
-            </Text>
-          );
-        return <Text key={i}>{part}</Text>;
-      })}
-    </Text>
-  );
-};
 
 // ─── Streaming cursor component ──────────────────────────────────────────────
 const StreamingCursor = ({ color }) => {
@@ -76,13 +54,19 @@ const MessageBubble = ({ message, isUser, modelLabel, meta, isTyping, isStreamin
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (e, g) => Math.abs(g.dx) > 10 && Math.abs(g.dy) < 10,
+      onMoveShouldSetPanResponderCapture: (e, g) => Math.abs(g.dx) > 10 && Math.abs(g.dy) < 10,
       onPanResponderMove: (e, g) => {
         if (!isUser && g.dx > 0) {
-          swipeX.setValue(Math.min(g.dx, 100)); // cap swipe
+          swipeX.setValue(Math.min(g.dx, 100)); // cap swipe right
+        } else if (isUser && g.dx < 0) {
+          swipeX.setValue(Math.max(g.dx, -100)); // cap swipe left
         }
       },
       onPanResponderRelease: async (e, g) => {
-        if (!isUser && g.dx > 60 && message) {
+        const isAISwipeComplete = !isUser && g.dx > 60;
+        const isUserSwipeComplete = isUser && g.dx < -60;
+
+        if ((isAISwipeComplete || isUserSwipeComplete) && message) {
           // Trigger copy and haptic
           setHasCopied(true);
           await Clipboard.setStringAsync(message);
@@ -90,7 +74,7 @@ const MessageBubble = ({ message, isUser, modelLabel, meta, isTyping, isStreamin
 
           // Snap to open position, hold to show checkmark, then snap back
           Animated.sequence([
-            Animated.spring(swipeX, { toValue: 80, friction: 6, useNativeDriver: true }),
+            Animated.spring(swipeX, { toValue: isUser ? -80 : 80, friction: 6, useNativeDriver: true }),
             Animated.delay(800),
             Animated.spring(swipeX, { toValue: 0, friction: 6, useNativeDriver: true }),
           ]).start(() => setHasCopied(false));
@@ -118,14 +102,25 @@ const MessageBubble = ({ message, isUser, modelLabel, meta, isTyping, isStreamin
       ]}
       {...panResponder.panHandlers}
     >
-      {/* Copy hint icon — visible when swiping right */}
-      {!isUser && !isTyping && (
+      {/* Copy hint icon — visible when swiping */}
+      {!isTyping && (
         <Animated.View
           style={[
             styles.copyHint,
+            isUser ? { right: -50, left: undefined } : { left: -50, right: undefined },
             {
-              opacity: swipeX.interpolate({ inputRange: [0, 60], outputRange: [0, 1] }),
-              transform: [{ scale: swipeX.interpolate({ inputRange: [0, 60], outputRange: [0.6, 1] }) }],
+              opacity: swipeX.interpolate({ 
+                inputRange: isUser ? [-60, 0] : [0, 60], 
+                outputRange: isUser ? [1, 0] : [0, 1],
+                extrapolate: 'clamp'
+              }),
+              transform: [{ 
+                scale: swipeX.interpolate({ 
+                  inputRange: isUser ? [-60, 0] : [0, 60], 
+                  outputRange: isUser ? [1, 0.6] : [0.6, 1],
+                  extrapolate: 'clamp'
+                }) 
+              }],
             },
           ]}
         >
@@ -148,17 +143,34 @@ const MessageBubble = ({ message, isUser, modelLabel, meta, isTyping, isStreamin
             tint={isDark ? "light" : "dark"}
             style={[styles.bubble, styles.userBubble]}
           >
-            {renderFormattedText(message, [styles.text, { color: textColor }])}
+            <Text style={[styles.text, { color: textColor }]}>{message}</Text>
           </BlurView>
         ) : (
           <View style={[styles.bubble, styles.aiBubble, { backgroundColor: isDark ? "#1c1c1c" : "#EBEBEB" }]}>
             {isTyping ? (
               <TypingIndicator dotColor={textColor} />
             ) : (
-              <Text style={[styles.text, { color: textColor }]}>
-                {renderFormattedText(message, [styles.text, { color: textColor }])}
+              <View>
+                <Markdown 
+                  style={{
+                    body: { color: textColor, fontSize: 16, lineHeight: 24, letterSpacing: 0.2 },
+                    code_inline: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', paddingHorizontal: 4, borderRadius: 4 },
+                    code_block: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 12, borderRadius: 8, overflow: "hidden" },
+                    fence: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 12, borderRadius: 8, overflow: "hidden" },
+                    strong: { fontWeight: "900" },
+                    em: { fontStyle: "italic" },
+                    paragraph: { marginTop: 0, marginBottom: 8 },
+                    bullet_list: { marginBottom: 8 },
+                    ordered_list: { marginBottom: 8 },
+                    heading1: { fontSize: 24, fontWeight: "bold", marginVertical: 8 },
+                    heading2: { fontSize: 20, fontWeight: "bold", marginVertical: 8 },
+                    heading3: { fontSize: 18, fontWeight: "bold", marginVertical: 8 },
+                  }}
+                >
+                  {message}
+                </Markdown>
                 {isStreaming && <StreamingCursor color={textColor} />}
-              </Text>
+              </View>
             )}
           </View>
         )}

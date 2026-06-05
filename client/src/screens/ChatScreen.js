@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Linking from "expo-linking";
 import {
   View,
   Text,
@@ -54,6 +56,8 @@ function parseSSEEvent(rawEvent) {
   return { event, data: dataLines.join("\n") };
 }
 
+const GOOGLE_TOKEN_KEY = "@broai_google_refresh_token";
+
 const ChatScreen = ({ initialUrl, clearUrl }) => {
   const [messages, setMessages] = useState([]);
   const [chats, setChats] = useState([]);
@@ -63,6 +67,8 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
   const [greeting, setGreeting] = useState("");
   const [showFab, setShowFab] = useState(false);
   const [isChatsLoading, setIsChatsLoading] = useState(true);
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const googleTokenRef = useRef(null);
 
   const appState = useRef(AppState.currentState);
 
@@ -84,6 +90,14 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
       useNativeDriver: true,
     }).start();
 
+    // Load stored Google token on mount
+    AsyncStorage.getItem(GOOGLE_TOKEN_KEY).then((token) => {
+      if (token) {
+        googleTokenRef.current = token;
+        setGoogleConnected(true);
+      }
+    });
+
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       appState.current = nextAppState;
     });
@@ -94,14 +108,32 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
   }, []);
 
   useEffect(() => {
-    if (initialUrl && chats.length > 0) {
+    if (!initialUrl) return;
+
+    // Handle Google OAuth deep link: works for both standalone (broai://auth) and Expo Go (exp://.../--/auth)
+    if (initialUrl.includes("auth?refresh_token=")) {
+      try {
+        const url = new URL(initialUrl);
+        const token = url.searchParams.get("refresh_token");
+        if (token) {
+          AsyncStorage.setItem(GOOGLE_TOKEN_KEY, token).then(() => {
+            googleTokenRef.current = token;
+            setGoogleConnected(true);
+            console.log("[FRONTEND] ✅ Google refresh token saved to storage.");
+          });
+        }
+      } catch (e) {
+        console.error("[FRONTEND] Failed to parse Google auth deep link:", e);
+      }
+      if (clearUrl) clearUrl();
+      return;
+    }
+
+    if (chats.length > 0) {
       if (initialUrl.includes("new")) {
         handleNewChat();
       } else if (initialUrl.includes("last")) {
-        // Select the most recent chat if available
-        if (chats[0]) {
-          handleSelectChat(chats[0].id);
-        }
+        if (chats[0]) handleSelectChat(chats[0].id);
       }
       if (clearUrl) clearUrl();
     }
@@ -197,6 +229,10 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
         xhr.open("POST", `${BACKEND_URL}/chat`, true);
         xhr.setRequestHeader("Content-Type", "application/json");
         xhr.setRequestHeader("Authorization", `Bearer ${process.env.EXPO_PUBLIC_BRO_AI_SECRET_TOKEN}`);
+        // Attach stored Google refresh token so backend can use Gmail/Calendar
+        if (googleTokenRef.current) {
+          xhr.setRequestHeader("X-Google-Refresh-Token", googleTokenRef.current);
+        }
         xhr.timeout = 0;
 
         xhr.onreadystatechange = () => {
@@ -365,6 +401,20 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
           </Animated.View>
           <View style={{ flex: 1 }} />
           <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.menuButton}
+              onPress={() => {
+                const redirectUrl = Linking.createURL("auth");
+                Linking.openURL(`${BACKEND_URL}/auth/google?redirect=${encodeURIComponent(redirectUrl)}`);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={googleConnected ? "logo-google" : "logo-google"}
+                size={20}
+                color={googleConnected ? "#4ade80" : colors.textSecondary}
+              />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.menuButton} onPress={toggleTheme}>
               <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={22} color={colors.text} />
             </TouchableOpacity>

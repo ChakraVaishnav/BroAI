@@ -15,7 +15,7 @@ import {
 } from "../agent/pendingAction.js";
 import { SYSTEM_PROMPT } from "../agent/prompts/system.js";
 import { readMemory } from "../memory/memory.js";
-import { getLlmWithTools, getLastModelUsed, getModelAttempts } from "../llm/groq.js";
+import { getLlmWithTools, getLastModelUsed, getModelAttempts } from "../llm/provider.js";
 import { initSSE, sendSSE } from "../utils/sse.js";
 import { debugLog, logError, isRateLimitError } from "../utils/logger.js";
 import {
@@ -212,62 +212,47 @@ async function handleStreamingChat(startTime, todayContext, memoryContext, res, 
     }
   });
 
+  const combinedSystemPrompt = `${SYSTEM_PROMPT}\n\n${memoryContext}\n\n${todayContext}`;
   const baseMessages = [
-    new SystemMessage(SYSTEM_PROMPT),
-    new SystemMessage(memoryContext),
-    new SystemMessage(todayContext),
+    new SystemMessage(combinedSystemPrompt),
     ...session.chatHistory,
   ];
 
-  // Fix #4: Use SSE_EVENTS constants instead of raw strings
   let streamedText = "";
   sendSSE(res, { info: "token_stream_start" }, SSE_EVENTS.META);
 
-  for await (const chunk of streamingLlmWithTools.stream(baseMessages, { signal: abortController.signal })) {
-    const tokenText = extractTextFromContent(chunk?.content);
-    if (!tokenText) continue;
-    streamedText += tokenText;
-    sendSSE(res, tokenText, SSE_EVENTS.TOKEN);
-    try { debugLog(`[BACKEND][TOKEN] ${tokenText}`); } catch (e) { /* ignore */ }
-  }
-
-  if (streamedText.trim()) {
-    session.chatHistory.push(new AIMessage(streamedText));
-    const timeTaken = ((Date.now() - startTime) / 1000).toFixed(2);
-    const modelUsed = getLastModelUsed(); // Fix #6: no more global.__last_model_used
-    debugLog(`[BACKEND][OUT] Final reply (model: ${modelUsed}, time: ${timeTaken}s): ${streamedText}`);
-    clearTimeout(timeoutId);
-    sendSSE(res, { final: true, timeTaken, model: modelUsed, attempts: getModelAttempts() }, SSE_EVENTS.DONE);
-    return res.end();
-  }
-
-
-  // ✅ Fix 4: Graph fallback now streams tokens via streamEvents() instead of blocking invoke()
-  debugLog("[BACKEND] ⚠️ No streamed tokens — falling back to agent graph with token streaming.");
-
   try {
-    let graphStreamedText = "";
-
     for await (const event of graph.streamEvents(
       { messages: baseMessages },
       { version: "v2", signal: abortController.signal }
     )) {
-      // on_chat_model_stream fires for every token from any LLM call inside the graph.
-      // Tool-deciding calls produce no text tokens; only the final reply produces text.
       if (event.event === "on_chat_model_stream") {
         const token = extractTextFromContent(event.data?.chunk?.content);
         if (token) {
-          graphStreamedText += token;
+          streamedText += token;
           sendSSE(res, token, "token");
+          try { debugLog(`[BACKEND][TOKEN] ${token}`); } catch (e) {}
         }
+      } else if (event.event === "on_tool_start") {
+        sendSSE(res, { info: "tool_running", tool: event.name }, "meta");
+        try { debugLog(`[BACKEND][GRAPH] Tool started: ${event.name}`); } catch (e) {}
       }
     }
 
-    if (graphStreamedText.trim()) {
-      session.chatHistory.push(new AIMessage(graphStreamedText));
+    if (streamedText.trim()) {
+      if (
+        streamedText.includes('"type": "function"') ||
+        streamedText.includes('"name": "get_emails"') ||
+        streamedText.includes('{"type":"function"')
+      ) {
+        streamedText = "Sir, something went wrong retrieving that. Please try again.";
+        sendSSE(res, streamedText, SSE_EVENTS.FINAL);
+      }
+
+      session.chatHistory.push(new AIMessage(streamedText));
       const timeTaken = ((Date.now() - startTime) / 1000).toFixed(2);
-      const modelUsed = getLastModelUsed(); // Fix #6
-      debugLog(`[BACKEND][OUT] Graph stream reply (time: ${timeTaken}s): ${graphStreamedText}`);
+      const modelUsed = getLastModelUsed();
+      debugLog(`[BACKEND][OUT] Final reply (model: ${modelUsed}, time: ${timeTaken}s): ${streamedText}`);
       clearTimeout(timeoutId);
       sendSSE(res, { final: true, timeTaken, model: modelUsed, attempts: getModelAttempts() }, SSE_EVENTS.DONE);
     } else {
@@ -277,6 +262,10 @@ async function handleStreamingChat(startTime, todayContext, memoryContext, res, 
     }
     return res.end();
   } catch (graphErr) {
+    if (graphErr.name === "AbortError" || graphErr.message.includes("aborted")) {
+      debugLog("[BACKEND] Stream was aborted by client.");
+      return res.end();
+    }
     clearTimeout(timeoutId);
     console.error("[BACKEND][GRAPH ERROR]", graphErr?.message || graphErr);
     sendSSE(res, `Error executing agent graph: ${graphErr?.message || String(graphErr)}`, SSE_EVENTS.ERROR);

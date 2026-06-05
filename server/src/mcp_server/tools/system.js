@@ -1,7 +1,7 @@
 export const systemTools = [
   {
     name: "get_time",
-    description: "Get current date and time.",
+    description: "Get the current date and time. Call this whenever Sir asks about the current time or date, or whenever you need to resolve \"today\", \"now\", or \"this week\" before passing dates to other tools. Never guess the date.",
     inputSchema: {
       type: "object",
       properties: {},

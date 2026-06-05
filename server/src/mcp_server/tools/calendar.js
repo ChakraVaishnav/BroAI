@@ -14,7 +14,7 @@ function endDateFromStart(startDate) {
 export const calendarTools = [
   {
     name: "create_event",
-    description: "Use this tool ONLY when Sir has explicitly said to add, create, or schedule a specific event with clear details. Do NOT call this if Sir just mentions something in passing or describes their schedule.",
+    description: "Create a calendar event. Call ONLY when Sir gives explicit details and says to create/schedule/add it. Do not call if Sir just mentions something in passing.",
     inputSchema: {
       type: "object",
       properties: {
@@ -33,7 +33,7 @@ export const calendarTools = [
   },
   {
     name: "list_events",
-    description: "ALWAYS use this tool when Sir asks about schedule, calendar, events, meetings, tasks for today, tomorrow, or any date. You have NO knowledge of Sir's actual calendar. Never make up events. Call this tool every time.",
+    description: "Fetch Sir's Google Calendar events. Call every time Sir asks about schedule, meetings, tasks, or any date. Always pass start_date and end_date as YYYY-MM-DD strings — never pass empty strings. If Sir says \"today\", call get_time first to get the date, then pass it here.",
     inputSchema: {
       type: "object",
       properties: {
@@ -57,7 +57,7 @@ export const calendarTools = [
   },
   {
     name: "delete_event",
-    description: "Use this tool ONLY when Sir has explicitly said to delete or cancel a specific event. Always confirm the event ID by calling list_events first to find the exact event. Never delete without explicit permission.",
+    description: "Delete a calendar event. Always call list_events first to find and confirm the event ID. Call ONLY with explicit delete permission from Sir.",
     inputSchema: {
       type: "object",
       properties: {

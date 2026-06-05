@@ -23,8 +23,8 @@ async function withTimeout(promise, label, timeoutMs = 10000) {
 export const supabaseTools = [
   // ── 1. Total user count ─────────────────────────────────────────────────
   {
-    name: "get_user_count",
-    description: "Returns total number of registered users.",
+    name: "get_total_users",
+    description: "Returns total number of registered COREsume users.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -44,7 +44,7 @@ export const supabaseTools = [
   // ── 2. User details by ID ────────────────────────────────────────────────
   {
     name: "get_user_by_id",
-    description: "Fetch full user details by ID.",
+    description: "Fetch full COREsume user details by ID.",
     inputSchema: {
       type: "object",
       properties: {
@@ -73,8 +73,8 @@ export const supabaseTools = [
 
   // ── 3. Last N users ──────────────────────────────────────────────────────
   {
-    name: "get_last_users",
-    description: "Returns the N most recently registered users (newest first).",
+    name: "get_recent_users",
+    description: "Returns N most recently registered COREsume users, newest first.",
     inputSchema: {
       type: "object",
       properties: {
@@ -102,8 +102,8 @@ export const supabaseTools = [
 
   // ── 4. Search users by username ──────────────────────────────────────────
   {
-    name: "search_users_by_name",
-    description: "Search for users by username (partial match).",
+    name: "search_users",
+    description: "Search COREsume users by username (partial match).",
     inputSchema: {
       type: "object",
       properties: {
@@ -137,8 +137,8 @@ export const supabaseTools = [
 
   // ── 5. Jobs fetched by a specific user ───────────────────────────────────
   {
-    name: "get_jobs_by_user",
-    description: "Returns all jobs and usage stats for a specific user ID.",
+    name: "get_user_jobs_and_usage",
+    description: "Returns all jobs and usage stats for a specific COREsume user ID.",
     inputSchema: {
       type: "object",
       properties: {
@@ -194,7 +194,7 @@ export const supabaseTools = [
   // ── 6. Recent ratings ────────────────────────────────────────────────────
   {
     name: "get_recent_ratings",
-    description: "Returns the most recent job ratings/feedback.",
+    description: "Returns most recent COREsume job ratings and feedback.",
     inputSchema: {
       type: "object",
       properties: {
@@ -241,7 +241,7 @@ export const supabaseTools = [
   // ── 7. Generic table explorer ────────────────────────────────────────────
   {
     name: "query_table",
-    description: "Query any allowed database table (User, Resume, Job, JobUsage, Rating).",
+    description: "Query any allowed Supabase table: User, Resume, Job, JobUsage, Rating.",
     inputSchema: {
       type: "object",
       properties: {

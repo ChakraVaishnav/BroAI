@@ -254,7 +254,10 @@ export function isDraftRequestMessage(text) {
     return false;
   }
 
-  return DRAFT_REQUEST_PHRASES.some((phrase) => normalized.includes(phrase));
+  return DRAFT_REQUEST_PHRASES.some((phrase) => {
+    const regex = new RegExp(`\\b${phrase}\\b`);
+    return regex.test(normalized);
+  });
 }
 
 export function isCancelMessage(text) {
@@ -263,7 +266,10 @@ export function isCancelMessage(text) {
     return false;
   }
 
-  return CANCEL_PHRASES.some((phrase) => normalized === phrase || normalized.includes(phrase));
+  return CANCEL_PHRASES.some((phrase) => {
+    const regex = new RegExp(`\\b${phrase}\\b`);
+    return regex.test(normalized);
+  });
 }
 
 export function isConfirmationMessage(text, action) {
@@ -273,5 +279,8 @@ export function isConfirmationMessage(text, action) {
   }
 
   const tokens = getConfirmTokens(action?.toolName);
-  return tokens.some((token) => normalized === token || normalized.includes(token));
+  return tokens.some((token) => {
+    const regex = new RegExp(`\\b${token}\\b`);
+    return regex.test(normalized);
+  });
 }

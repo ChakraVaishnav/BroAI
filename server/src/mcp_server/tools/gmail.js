@@ -41,7 +41,7 @@ function filterEmailsByQuery(emails, query) {
 export const gmailTools = [
   {
     name: "send_email",
-    description: "Use this tool ONLY when Sir has explicitly said to send an email with a clear instruction like 'send this email', 'send it', or 'go ahead and send'. Do NOT call this tool just because Sir mentioned email in conversation, asked a question about email capability, or described a situation.",
+    description: "Send an email from Sir's Gmail. Call ONLY after Sir has seen the full draft AND confirmed with: \"Send it\" / \"Go ahead\" / \"Send the email\" / \"Confirm\" / \"Do it\". Never call this just because Sir mentioned email in conversation.",
     inputSchema: {
       type: "object",
       properties: {
@@ -58,7 +58,7 @@ export const gmailTools = [
   },
   {
     name: "reply_to_email",
-    description: "Use this tool to reply to an existing email thread. Sir must provide the messageId of the email he wants to reply to. This tool automatically handles the threading, recipient, and 'Re:' subject line. ALWAYS use this when Sir says 'reply to this' or 'tell them...'.",
+    description: "Reply to an existing Gmail thread. Requires messageId from get_emails. Handles threading automatically. Call ONLY after Sir confirms the draft.",
     inputSchema: {
       type: "object",
       properties: {
@@ -73,7 +73,7 @@ export const gmailTools = [
   },
   {
     name: "get_emails",
-    description: "ALWAYS use this tool when Sir asks about emails, inbox, messages, mail, or anything email-related. You have NO knowledge of Sir's actual emails. Do not answer email questions from memory. Call this tool every single time Sir mentions emails, even if you think you already know the answer.",
+    description: "Fetch Sir's Gmail inbox. Call every single time Sir mentions emails, inbox, messages, or anything mail-related. You have no knowledge of Sir's actual emails — do not answer from memory. maxResults must be a number (integer), not a string.",
     inputSchema: {
       type: "object",
       properties: {
@@ -83,7 +83,7 @@ export const gmailTools = [
             "Gmail search query e.g. 'from:boss@company.com' or 'subject:invoice'. Leave empty to get recent inbox emails.",
         },
         maxResults: {
-          type: "number",
+          type: "integer",
           description: "Maximum number of emails to return. Default is 5.",
         },
       },

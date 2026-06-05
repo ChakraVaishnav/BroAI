@@ -13,35 +13,46 @@ const mcpServerEntry = path.resolve(__dirname, "../mcp_server/index.js");
 let mcpClient = null;
 let connectPromise = null;
 let toolCache = null;
-
+let activeTransport = null;
+let currentGoogleToken = null;
 
 async function ensureConnected() {
   if (mcpClient && connectPromise) {
-    try {
-      await connectPromise;
-      return mcpClient;
-    } catch {
-      // Fix #5: MCP subprocess crashed — reset state so next call reconnects cleanly
-      console.warn("[MCP] Stored connection failed — resetting for reconnect.");
+    if (process.env.GOOGLE_REFRESH_TOKEN !== currentGoogleToken) {
+      console.log("[MCP] 🔄 Google token changed in request, restarting MCP child process to sync env vars.");
+      try { await activeTransport?.close(); } catch {}
       mcpClient = null;
       connectPromise = null;
       toolCache = null;
+    } else {
+      try {
+        await connectPromise;
+        return mcpClient;
+      } catch {
+        // Fix #5: MCP subprocess crashed — reset state so next call reconnects cleanly
+        console.warn("[MCP] Stored connection failed — resetting for reconnect.");
+        mcpClient = null;
+        connectPromise = null;
+        toolCache = null;
+      }
     }
   }
+
+  currentGoogleToken = process.env.GOOGLE_REFRESH_TOKEN;
 
   mcpClient = new Client(
     { name: "broai-agent-client", version: "1.0.0" },
     { capabilities: {} }
   );
 
-  const transport = new StdioClientTransport({
+  activeTransport = new StdioClientTransport({
     command: process.execPath,
     args: [mcpServerEntry],
     cwd: path.resolve(__dirname, ".."),
     env: { ...process.env },
   });
 
-  connectPromise = mcpClient.connect(transport);
+  connectPromise = mcpClient.connect(activeTransport);
   await connectPromise;
   return mcpClient;
 }
