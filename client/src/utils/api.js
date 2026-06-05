@@ -18,6 +18,7 @@ export async function sendChatMessage(message, signal) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.EXPO_PUBLIC_BRO_AI_SECRET_TOKEN}`
     },
     body: JSON.stringify({ message }),
     signal,
@@ -40,6 +41,7 @@ export async function getModelsStatus() {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.EXPO_PUBLIC_BRO_AI_SECRET_TOKEN}`
     },
   });
 

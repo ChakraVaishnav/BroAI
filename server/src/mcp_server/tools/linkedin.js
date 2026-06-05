@@ -35,12 +35,39 @@ export const linkedinTools = [
       type: "object",
       properties: {
         content: { type: "string", description: "The text content to post." },
+        attachProvidedImage: { type: "boolean", description: "Set to true to include the image provided by the user in this turn." },
       },
       required: ["content"],
     },
-    execute: async ({ content }) => {
+    execute: async ({ content, attachProvidedImage }) => {
       const { ZERNIO } = process.env;
       const accountId = await getZernioLinkedinAccountId();
+      let mediaItems = undefined;
+
+      if (attachProvidedImage && process.env.CURRENT_IMAGE_BASE64) {
+        const match = process.env.CURRENT_IMAGE_BASE64.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (match) {
+          const mimeType = match[1];
+          const base64Data = match[2];
+          const buffer = Buffer.from(base64Data, "base64");
+          const blob = new Blob([buffer], { type: mimeType });
+          
+          const formData = new FormData();
+          formData.append("file", blob, "upload.jpg");
+          
+          const uploadRes = await fetch("https://zernio.com/api/v1/media/upload-direct", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${ZERNIO}`,
+            },
+            body: formData,
+          });
+          
+          if (!uploadRes.ok) throw new Error(`Zernio media upload failed: ${await uploadRes.text()}`);
+          const uploadData = await uploadRes.json();
+          mediaItems = [{ type: "image", url: uploadData.url }];
+        }
+      }
       
       const res = await fetch("https://zernio.com/api/v1/posts", {
         method: "POST",
@@ -52,6 +79,7 @@ export const linkedinTools = [
           content: content,
           platforms: [{ platform: "linkedin", accountId: accountId }],
           publishNow: true,
+          ...(mediaItems ? { mediaItems } : {}),
         }),
       });
 

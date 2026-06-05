@@ -30,7 +30,7 @@ const StreamingCursor = ({ color }) => {
 };
 
 // ─── Main component ──────────────────────────────────────────────────────────
-const MessageBubble = ({ message, isUser, modelLabel, meta, isTyping, isStreaming }) => {
+const MessageBubble = ({ message, image, isUser, modelLabel, meta, isTyping, isStreaming }) => {
   const { colors, isDark } = useAppTheme();
 
   // Entry animation
@@ -138,12 +138,18 @@ const MessageBubble = ({ message, isUser, modelLabel, meta, isTyping, isStreamin
       {/* Bubble */}
       <View style={styles.bubbleWrapper}>
         {isUser ? (
-          <BlurView
+            <BlurView
             intensity={isDark ? 30 : 60}
             tint={isDark ? "light" : "dark"}
             style={[styles.bubble, styles.userBubble]}
           >
-            <Text style={[styles.text, { color: textColor }]}>{message}</Text>
+            {image && (
+              <Animated.Image 
+                source={{ uri: image }} 
+                style={[styles.attachedImage, { borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)" }]} 
+              />
+            )}
+            {message ? <Text style={[styles.text, { color: textColor }]}>{message}</Text> : null}
           </BlurView>
         ) : (
           <View style={[styles.bubble, styles.aiBubble, { backgroundColor: isDark ? "#1c1c1c" : "#EBEBEB" }]}>
@@ -256,6 +262,14 @@ const styles = StyleSheet.create({
   copyText: {
     fontSize: 12,
     fontWeight: "bold",
+    marginLeft: 6,
+  },
+  attachedImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
   },
   modelLabel: {
     fontSize: 9,

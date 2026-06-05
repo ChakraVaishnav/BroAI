@@ -64,7 +64,13 @@ export async function chatHandler(req, res) {
 
   try {
     // ✅ Fix 2: Read sessionId — frontend sends chatId as sessionId
-    const { message, sessionId = "default" } = req.body;
+    const { message, sessionId = "default", imageBase64 } = req.body;
+
+    if (imageBase64) {
+      process.env.CURRENT_IMAGE_BASE64 = imageBase64;
+    } else {
+      delete process.env.CURRENT_IMAGE_BASE64;
+    }
     const clientAddr =
       req.ip ||
       req.headers["x-forwarded-for"] ||
@@ -88,7 +94,19 @@ export async function chatHandler(req, res) {
 
     // ✅ Fix 3: Per-session chat history
     const session = getSession(sessionId);
-    session.chatHistory.push(new HumanMessage(message));
+    
+    // Multimodal support for Gemini Vision
+    let content;
+    if (imageBase64) {
+      content = [
+        { type: "text", text: message },
+        { type: "image_url", image_url: { url: imageBase64 } }
+      ];
+    } else {
+      content = message;
+    }
+    
+    session.chatHistory.push(new HumanMessage({ content }));
     if (session.chatHistory.length > CHAT_HISTORY_MAX_MESSAGES) {
       session.chatHistory = session.chatHistory.slice(-CHAT_HISTORY_MAX_MESSAGES);
     }

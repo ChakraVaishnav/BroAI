@@ -176,11 +176,11 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
     loadChats();
   };
 
-  const handleSend = async (text) => {
+  const handleSend = async (text, imageBase64) => {
     // Phase 1: Send haptic
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    const userMessage = { id: Date.now().toString(), text, isUser: true };
+    const userMessage = { id: Date.now().toString(), text, isUser: true, image: imageBase64 };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setIsGenerating(true);
@@ -311,7 +311,7 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
           }
         };
 
-        xhr.send(JSON.stringify({ message: text, sessionId: chatId }));
+        xhr.send(JSON.stringify({ message: text, sessionId: chatId, imageBase64 }));
       });
 
       const replyText = (finalText || streamedText).trim() || "Error: No reply found in backend response.";
@@ -324,9 +324,22 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
           text: replyText,
           isUser: false,
           modelLabel: "BRO AI",
-          meta: responseMeta, // { timeTaken, model, attempts }
+          meta: responseMeta,
         },
       ];
+      setMessages(updatedMessages);
+      
+      // Update or add chat in history
+      const existingChat = chats.find(c => c.id === chatId);
+      const updatedChat = existingChat
+        ? { ...existingChat, messages: updatedMessages, updatedAt: Date.now() }
+        : {
+            id: chatId,
+            messages: updatedMessages,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            provider: "Google Gemini", // could come from meta
+          };
 
       // Phase 1: Notify if backgrounded
       if (appState.current.match(/inactive|background/)) {
@@ -440,6 +453,7 @@ const ChatScreen = ({ initialUrl, clearUrl }) => {
           renderItem={({ item }) => (
             <MessageBubble
               message={item.text}
+              image={item.image}
               isUser={item.isUser}
               modelLabel={item.modelLabel}
               meta={item.meta}

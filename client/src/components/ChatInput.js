@@ -8,11 +8,13 @@ import {
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useAppTheme, theme } from "../styles/theme";
 
 const ChatInput = ({ onSend, isGenerating, onStop }) => {
   const [text, setText] = useState("");
   const [inputHeight, setInputHeight] = useState(45);
+  const [selectedImage, setSelectedImage] = useState(null);
   const { colors, isDark } = useAppTheme();
 
   // Button press scale animation
@@ -20,7 +22,7 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
   const buttonGlow = useRef(new Animated.Value(0)).current;
 
   const handleSend = () => {
-    if (text.trim()) {
+    if (text.trim() || selectedImage) {
       // Press animation: quick scale down then spring back
       Animated.sequence([
         Animated.spring(buttonScale, {
@@ -37,9 +39,26 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
         }),
       ]).start();
 
-      onSend(text.trim());
+      onSend(text.trim(), selectedImage);
       setText("");
+      setSelectedImage(null);
       setInputHeight(45);
+    }
+  };
+
+  const pickImage = async () => {
+    // No permissions request is necessary for launching the image library
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      // Store the base64 string
+      const asset = result.assets[0];
+      setSelectedImage(`data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`);
     }
   };
 
@@ -49,10 +68,11 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
   };
 
   const hasText = text.trim().length > 0;
+  const hasContent = hasText || selectedImage;
 
   const buttonBg = isGenerating
     ? colors.error || "#FF3B30"
-    : hasText
+    : hasContent
     ? colors.text
     : colors.border;
 
@@ -71,27 +91,51 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
           },
         ]}
       >
-        <TextInput
-          style={[styles.input, { height: inputHeight, color: colors.text }]}
-          placeholder="Ask anything..."
-          placeholderTextColor={colors.textSecondary}
-          value={text}
-          onChangeText={setText}
-          multiline
-          onContentSizeChange={handleContentSizeChange}
-          selectionColor={colors.accent}
-          onSubmitEditing={handleSend}
-        />
+        {selectedImage && (
+          <View style={styles.imagePreviewContainer}>
+            <View style={styles.imagePreviewWrapper}>
+              <Animated.Image 
+                source={{ uri: selectedImage }} 
+                style={styles.imagePreview} 
+              />
+              <TouchableOpacity 
+                style={styles.removeImageBtn}
+                onPress={() => setSelectedImage(null)}
+              >
+                <Ionicons name="close" size={14} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        <View style={styles.inputRow}>
+          <TouchableOpacity 
+            style={[styles.attachButton, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.04)" }]}
+            onPress={pickImage}
+          >
+            <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <TextInput
+            style={[styles.input, { height: inputHeight, color: colors.text }]}
+            placeholder="Ask anything..."
+            placeholderTextColor={colors.textSecondary}
+            value={text}
+            onChangeText={setText}
+            multiline
+            onContentSizeChange={handleContentSizeChange}
+            selectionColor={colors.accent}
+            onSubmitEditing={handleSend}
+          />
 
         <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
           <TouchableOpacity
             style={[
               styles.button,
               { backgroundColor: buttonBg },
-              !hasText && !isGenerating && styles.disabledButton,
+              !hasContent && !isGenerating && styles.disabledButton,
             ]}
             onPress={isGenerating ? onStop : handleSend}
-            disabled={!hasText && !isGenerating}
+            disabled={!hasContent && !isGenerating}
             activeOpacity={0.8}
           >
             <Ionicons
@@ -100,13 +144,14 @@ const ChatInput = ({ onSend, isGenerating, onStop }) => {
               color={
                 isGenerating
                   ? "#FFFFFF"
-                  : hasText
+                  : hasContent
                   ? colors.background
                   : colors.textSecondary
               }
             />
           </TouchableOpacity>
         </Animated.View>
+        </View>
       </View>
     </BlurView>
   );
@@ -120,12 +165,24 @@ const styles = StyleSheet.create({
     borderColor: "rgba(128,128,128,0.2)",
   },
   inputWrapper: {
-    flexDirection: "row",
-    alignItems: "flex-end",
+    flexDirection: "column",
     borderRadius: 24,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+  },
+  attachButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+    marginBottom: 2,
   },
   input: {
     flex: 1,
@@ -146,6 +203,36 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.25,
+  },
+  imagePreviewContainer: {
+    marginBottom: 8,
+    paddingHorizontal: 4,
+    paddingTop: 4,
+  },
+  imagePreviewWrapper: {
+    position: "relative",
+    width: 60,
+    height: 60,
+  },
+  imagePreview: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(128,128,128,0.3)",
+  },
+  removeImageBtn: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
   },
 });
 
