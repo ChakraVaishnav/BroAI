@@ -8,6 +8,9 @@ import { google } from "googleapis";
 
 const router = express.Router();
 
+// Cache to handle Chrome double-fetching the callback URL
+const codeCache = new Map();
+
 function getOAuth2Client() {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -51,6 +54,13 @@ router.get("/google/callback", async (req, res) => {
     `);
   }
 
+  // If we already successfully processed this code recently (e.g. Chrome pre-fetch),
+  // return the cached success page to prevent invalid_grant on the second request.
+  if (codeCache.has(code)) {
+    console.log("[Auth] Code already processed recently. Returning cached success page.");
+    return res.send(codeCache.get(code));
+  }
+
   try {
     const oauth2Client = getOAuth2Client();
     const { tokens } = await oauth2Client.getToken(code);
@@ -78,7 +88,7 @@ router.get("/google/callback", async (req, res) => {
     const deepLink = `${redirectBase}?refresh_token=${encodeURIComponent(refreshToken)}`;
 
     // Show a sleek redirect page
-    return res.send(`
+    const successHtml = `
       <!DOCTYPE html>
       <html lang="en">
         <head>
@@ -184,7 +194,12 @@ router.get("/google/callback", async (req, res) => {
           </div>
         </body>
       </html>
-    `);
+    `;
+    
+    codeCache.set(code, successHtml);
+    setTimeout(() => codeCache.delete(code), 60000); // Clear after 60s
+    
+    return res.send(successHtml);
   } catch (err) {
     console.error("[Auth] Google callback error:", err);
     return res.send(`
