@@ -87,6 +87,13 @@ router.get("/google/callback", async (req, res) => {
     const redirectBase = req.query.state || "broai://auth";
     const deepLink = `${redirectBase}?refresh_token=${encodeURIComponent(refreshToken)}`;
 
+    // Generate an Android intent URI to force open the app, bypassing Chrome's deep link restrictions
+    let androidIntent = deepLink;
+    if (deepLink.startsWith("broai://")) {
+      const intentPath = deepLink.replace("broai://", "");
+      androidIntent = `intent://${intentPath}#Intent;scheme=broai;package=com.chakravaishnav.broai;end`;
+    }
+
     // Show a sleek redirect page
     const successHtml = `
       <!DOCTYPE html>
@@ -171,6 +178,7 @@ router.get("/google/callback", async (req, res) => {
               border-radius: 12px;
               text-decoration: none;
               transition: transform 0.2s ease, opacity 0.2s ease;
+              cursor: pointer;
             }
             .btn:active {
               transform: scale(0.98);
@@ -181,6 +189,17 @@ router.get("/google/callback", async (req, res) => {
               100% { opacity: 1; transform: translateY(0); }
             }
           </style>
+          <script>
+            function handleReturn(e) {
+              e.preventDefault();
+              var isAndroid = /android/i.test(navigator.userAgent);
+              if (isAndroid) {
+                window.location.href = "${androidIntent}";
+              } else {
+                window.location.href = "${deepLink}";
+              }
+            }
+          </script>
         </head>
         <body>
           <div class="glow"></div>
@@ -190,7 +209,7 @@ router.get("/google/callback", async (req, res) => {
             </div>
             <h1>Google Connected</h1>
             <p>Authentication successful. You can now securely use Gmail and Calendar via BroAI.</p>
-            <a href="${deepLink}" class="btn">Return to App</a>
+            <a href="${deepLink}" onclick="handleReturn(event)" class="btn">Return to App</a>
           </div>
         </body>
       </html>
