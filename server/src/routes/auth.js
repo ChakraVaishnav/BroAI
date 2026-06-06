@@ -182,9 +182,6 @@ router.get("/google/callback", async (req, res) => {
             <p>Authentication successful. You can now securely use Gmail and Calendar via BroAI.</p>
             <a href="${deepLink}" class="btn">Return to App</a>
           </div>
-          <script>
-            setTimeout(() => { window.location.href = "${deepLink}"; }, 1000);
-          </script>
         </body>
       </html>
     `);
